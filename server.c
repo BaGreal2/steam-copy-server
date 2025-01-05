@@ -8,6 +8,11 @@
 #define PORT 8080
 #define BUFFER_SIZE 1024
 
+typedef struct {
+  const char *name;
+  const char *sql;
+} TableSchema;
+
 // Callback function for SELECT queries
 int callback(void *unused, int argc, char **argv, char **colName)
 {
@@ -18,10 +23,26 @@ int callback(void *unused, int argc, char **argv, char **colName)
   return 0;
 }
 
-const char *extract_path(const char *request)
+void db_request(sqlite3 *db, const char *sql,
+                int (*callback)(void *, int, char **, char **), void *data,
+                char **err_msg)
+{
+  int rc = sqlite3_exec(db, sql, callback, data, err_msg);
+
+  if (rc != SQLITE_OK) {
+    fprintf(stderr, "ERROR: Failed to execute SQL: %s\n", *err_msg);
+    sqlite3_free(*err_msg);
+    *err_msg = NULL;
+  } else {
+    printf("SQL query executed successfully.\n");
+  }
+}
+
+char *extract_path(const char *request)
 {
   const char *path_start = strchr(request, ' ') + 1;
   const char *path_end = strchr(path_start, ' ');
+
   int path_length = path_end - path_start;
   char *path = malloc(path_length + 1);
   strncpy(path, path_start, path_length);
@@ -29,7 +50,18 @@ const char *extract_path(const char *request)
   return path;
 }
 
-const char *construct_response(const char *body)
+char *extract_method(const char *request)
+{
+  const char *method_end = strchr(request, ' ');
+
+  int method_length = method_end - request;
+  char *method = malloc(method_length + 1);
+  strncpy(method, request, method_length);
+  method[method_length] = '\0';
+  return method;
+}
+
+char *construct_response(const char *body)
 {
   char *response = malloc(strlen(body) + 100);
   sprintf(response,
@@ -46,17 +78,59 @@ const char *construct_response(const char *body)
 int main()
 {
   sqlite3 *db;
-  char *errMsg = 0;
+  char *err_msg = 0;
   int rc;
 
   rc = sqlite3_open("steam.db", &db);
   if (rc) {
-    fprintf(stderr, "Can't open database: %s\n", sqlite3_errmsg(db));
-    return 1;
+    fprintf(stderr, "ERROR: Can't open database: %s\n", sqlite3_errmsg(db));
+    exit(EXIT_FAILURE);
   }
-  printf("Opened database successfully.\n");
+  printf("LOG: Opened database successfully.\n");
 
-  // create tables...
+  TableSchema tables[] = {
+      {"Users", "CREATE TABLE IF NOT EXISTS Users("
+                "user_id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                "username TEXT NOT NULL UNIQUE, "
+                "email TEXT NOT NULL UNIQUE, "
+                "created_at DATETIME DEFAULT CURRENT_TIMESTAMP);"},
+      {"Games", "CREATE TABLE IF NOT EXISTS Games("
+                "game_id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                "title TEXT NOT NULL, "
+                "genre TEXT NOT NULL, "
+                "release_date DATE, "
+                "developer TEXT);"},
+      {"Libraries",
+       "CREATE TABLE IF NOT EXISTS Libraries("
+       "library_id INTEGER PRIMARY KEY AUTOINCREMENT, "
+       "user_id INTEGER NOT NULL, "
+       "game_id INTEGER NOT NULL, "
+       "purchased_at DATETIME DEFAULT CURRENT_TIMESTAMP, "
+       "FOREIGN KEY (user_id) REFERENCES Users(user_id) ON DELETE CASCADE, "
+       "FOREIGN KEY (game_id) REFERENCES Games(game_id) ON DELETE CASCADE, "
+       "UNIQUE(user_id, game_id));"},
+      {"Reviews",
+       "CREATE TABLE IF NOT EXISTS Reviews("
+       "review_id INTEGER PRIMARY KEY AUTOINCREMENT, "
+       "user_id INTEGER NOT NULL, "
+       "game_id INTEGER NOT NULL, "
+       "rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <=5), "
+       "review_text TEXT, "
+       "created_at DATETIME DEFAULT CURRENT_TIMESTAMP, "
+       "FOREIGN KEY (user_id) REFERENCES Users(user_id) ON DELETE CASCADE, "
+       "FOREIGN KEY (game_id) REFERENCES Games(game_id) ON DELETE CASCADE);"}};
+
+  for (size_t i = 0; i < sizeof(tables) / sizeof(tables[0]); i++) {
+    rc = sqlite3_exec(db, tables[i].sql, 0, 0, &err_msg);
+    if (rc != SQLITE_OK) {
+      fprintf(stderr, "ERROR: Failed to create table %s: %s\n", tables[i].name,
+              err_msg);
+      sqlite3_free(err_msg);
+    } else {
+      printf("LOG: Table %s created successfully.\n", tables[i].name);
+    }
+  }
+
   // insert data...
 
   int server_fd, new_socket;
@@ -67,7 +141,7 @@ int main()
   // Step 1: Create a socket
   server_fd = socket(AF_INET, SOCK_STREAM, 0);
   if (server_fd == 0) {
-    perror("Socket failed");
+    perror("ERROR: Socket failed");
     exit(EXIT_FAILURE);
   }
 
@@ -77,14 +151,14 @@ int main()
   address.sin_port = htons(PORT);       // Convert port to network byte order
 
   if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
-    perror("Bind failed");
+    perror("ERROR: Bind failed");
     close(server_fd);
     exit(EXIT_FAILURE);
   }
 
   // Step 3: Listen for incoming connections
   if (listen(server_fd, 3) < 0) {
-    perror("Listen failed");
+    perror("ERROR: Listen failed");
     close(server_fd);
     exit(EXIT_FAILURE);
   }
@@ -96,7 +170,7 @@ int main()
     new_socket =
         accept(server_fd, (struct sockaddr *)&address, (socklen_t *)&addrlen);
     if (new_socket < 0) {
-      perror("Accept failed");
+      perror("ERROR: Accept failed");
       continue;
     }
 
@@ -106,18 +180,25 @@ int main()
 
     // Step 6: Send an HTTP response
     printf("Path:\n%s\n", extract_path(buffer));
-    const char *path = extract_path(buffer);
+    printf("Method:\n%s\n", extract_method(buffer));
 
-    if (strcmp(path, "/") == 0) {
-      const char *response = construct_response("Hello, world!");
-      send(new_socket, response, strlen(response), 0);
-    } else if (strcmp(path, "/example") == 0) {
-      const char *response = construct_response("Example!");
-      send(new_socket, response, strlen(response), 0);
+    const char *path = extract_path(buffer);
+    const char *method = extract_method(buffer);
+
+    char *response;
+
+    if (strcmp(path, "/games") == 0 && strcmp(method, "GET") == 0) {
+      const char *all_games_sql = "SELECT * FROM Users;";
+      db_request(db, all_games_sql, callback, 0, &err_msg);
+      response = construct_response("Games:");
+    } else if (strcmp(path, "/example") == 0 && strcmp(method, "GET") == 0) {
+      response = construct_response("Example!");
     } else {
       printf("404 Not Found\n");
-      send(new_socket, "HTTP/1.1 404 Not Found\r\n", 24, 0);
+      response = "HTTP/1.1 404 Not Found\r\n";
     }
+
+    send(new_socket, response, strlen(response), 0);
 
     printf("Response sent.\n");
 

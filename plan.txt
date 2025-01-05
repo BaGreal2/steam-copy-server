@@ -1,0 +1,24 @@
+GET    /games                  -> get all games
+POST   /games                  -> add a new game
+GET    /games/:id              -> get game by id
+DELETE /games/:id              -> delete game by id
+PUT    /games/:id              -> update game by id
+GET    /games/:id/achievements -> get all achievements from game
+GET    /games/:id/reviews      -> get all reviews from game
+POST   /games/:id/reviews      -> add a new review to game
+
+POST /register -> register
+POST /login    -> login
+POST /logout   -> logout
+
+GET    /me                  -> get my user info
+GET    /me/games            -> get all games from user library
+POST   /me/games            -> add a new game to user library
+DELETE /me/games/:id        -> delete game from user library
+GET    /me/achievements     -> get all achievements from user
+GET    /me/achievements/:id -> get all achievements from user in game
+
+GET    /achievements/:id -> get achievement by id
+POST   /achievements     -> add a new achievement
+PUT    /achievements/:id -> update achievement by id
+DELETE /achievements/:id -> delete achievement by id
