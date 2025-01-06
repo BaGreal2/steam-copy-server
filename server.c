@@ -126,22 +126,38 @@ char *extract_method(char *request)
   return method;
 }
 
-char *construct_response(char *body)
+char *construct_response(int status_code, const char *body)
 {
-  const char *header = "HTTP/1.1 200 OK\r\n"
-                       "Content-Type: text/plain\r\n"
-                       "Content-Length: %zu\r\n"
-                       "\r\n";
+  const char *status_text;
+  switch (status_code) {
+  case 200:
+    status_text = "200 OK";
+    break;
+  case 500:
+    status_text = "500 Internal Server Error";
+    break;
+  case 404:
+    status_text = "404 Not Found";
+    break;
+  default:
+    status_text = "400 Bad Request";
+    break;
+  }
 
-  size_t header_len = strlen(header) + strlen(body) + 20;
+  const char *header_format = "HTTP/1.1 %s\r\n"
+                              "Content-Type: application/json\r\n"
+                              "Content-Length: %zu\r\n"
+                              "\r\n";
+
+  size_t header_len = strlen(header_format) + strlen(status_text) +
+                      strlen(body) + 20; // Extra for content-length
   char *response = malloc(header_len);
-
   if (!response) {
     fprintf(stderr, "ERROR: Memory allocation failed.\n");
     return NULL;
   }
 
-  sprintf(response, header, strlen(body));
+  sprintf(response, header_format, status_text, strlen(body));
   strcat(response, body);
 
   return response;
@@ -272,17 +288,17 @@ int main()
             fprintf(stderr, "ERROR: Failed to create JSON array.\n");
             return 0;
           }
-          db_request(db, all_games_sql, callback_all_games, json_array, &err_msg,
-                     "Fetched all games");
+          db_request(db, all_games_sql, callback_all_games, json_array,
+                     &err_msg, "Fetched all games");
 
           char *json_string = cJSON_PrintUnformatted(json_array);
 
           if (json_string) {
-            response = construct_response(json_string);
+            response = construct_response(200, json_string);
             free(json_string);
           } else {
             response = construct_response(
-                "{\"error\": \"Failed to serialize JSON.\"}");
+                500, "{\"error\": \"Failed to serialize JSON.\"}");
           }
           cJSON_Delete(json_array);
 
@@ -298,24 +314,24 @@ int main()
             fprintf(stderr, "ERROR: Failed to create JSON object.\n");
             return 0;
           }
-          db_request(db, game_format_sql, callback_game_by_id, json_array, &err_msg,
-                     "Fetched game by id");
+          db_request(db, game_format_sql, callback_game_by_id, json_array,
+                     &err_msg, "Fetched game by id");
 
           char *json_string = cJSON_PrintUnformatted(json_array);
 
           if (json_string) {
-            response = construct_response(json_string);
+            response = construct_response(200, json_string);
             free(json_string);
           } else {
             response = construct_response(
-                "{\"error\": \"Failed to serialize JSON.\"}");
+                500, "{\"error\": \"Failed to serialize JSON.\"}");
           }
           cJSON_Delete(json_array);
         }
       }
     } else {
       printf("404 Not Found\n");
-      response = "HTTP/1.1 404 Not Found\r\n";
+      response = construct_response(404, "{\"error\": \"Not Found.\"}");
     }
 
     send(new_socket, response, strlen(response), 0);
