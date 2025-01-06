@@ -1,3 +1,4 @@
+#include "cJSON.h"
 #include <arpa/inet.h>
 #include <sqlite3.h>
 #include <stdio.h>
@@ -13,25 +14,45 @@ typedef struct {
   size_t size;
 } ResponseBuffer;
 
-int callback(void *buffer, int argc, char **argv, char **colName)
+int callback_all_games(void *buffer, int argc, char **argv, char **colName)
 {
-  ResponseBuffer *resp_buf = (ResponseBuffer *)buffer;
+  cJSON *json_array = (cJSON *)buffer;
+
+  cJSON *json_row = cJSON_CreateObject();
+  if (!json_row) {
+    fprintf(stderr, "ERROR: Failed to create JSON object.\n");
+    return 1;
+  }
 
   for (int i = 0; i < argc; i++) {
     const char *key = colName[i];
-    const char *value = argv[i] ? argv[i] : "NULL";
+    const char *value = argv[i] ? argv[i] : NULL;
 
-    size_t new_size =
-        resp_buf->size + strlen(key) + strlen(value) + 4; // "key = value\n\0"
-
-    resp_buf->data = realloc(resp_buf->data, new_size);
-    if (!resp_buf->data) {
-      fprintf(stderr, "ERROR: Memory allocation failed.\n");
-      return 1; // Abort query
+    if (value) {
+      cJSON_AddStringToObject(json_row, key, value);
+    } else {
+      cJSON_AddNullToObject(json_row, key);
     }
+  }
 
-    sprintf(resp_buf->data + resp_buf->size, "%s = %s\n", key, value);
-    resp_buf->size = new_size - 1;
+  cJSON_AddItemToArray(json_array, json_row);
+
+  return 0;
+}
+
+int callback_game_by_id(void *buffer, int argc, char **argv, char **colName)
+{
+  cJSON *json_object = (cJSON *)buffer;
+
+  for (int i = 0; i < argc; i++) {
+    const char *key = colName[i];
+    const char *value = argv[i] ? argv[i] : NULL;
+
+    if (value) {
+      cJSON_AddStringToObject(json_object, key, value);
+    } else {
+      cJSON_AddNullToObject(json_object, key);
+    }
   }
 
   return 0;
@@ -246,33 +267,50 @@ int main()
         if (!path_id) {
           const char *all_games_sql = "SELECT * FROM Games;";
 
-          ResponseBuffer resp_buf = {.data = NULL, .size = 0};
-          db_request(db, all_games_sql, callback, &resp_buf, &err_msg,
+          cJSON *json_array = cJSON_CreateArray();
+          if (!json_array) {
+            fprintf(stderr, "ERROR: Failed to create JSON array.\n");
+            return 0;
+          }
+          db_request(db, all_games_sql, callback_all_games, json_array, &err_msg,
                      "Fetched all games");
 
-          if (resp_buf.data) {
-            response = construct_response(resp_buf.data);
-            free(resp_buf.data);
+          char *json_string = cJSON_PrintUnformatted(json_array);
+
+          if (json_string) {
+            response = construct_response(json_string);
+            free(json_string);
           } else {
-            response = construct_response("No data found.");
+            response = construct_response(
+                "{\"error\": \"Failed to serialize JSON.\"}");
           }
-        // GET /games/:id
+          cJSON_Delete(json_array);
+
+          // GET /games/:id
         } else {
           const char *game_sql = "SELECT * FROM Games WHERE game_id = %s;";
           char *game_format_sql =
               malloc(strlen(game_sql) + strlen(path_id) + 1);
           sprintf(game_format_sql, game_sql, path_id);
 
-          ResponseBuffer resp_buf = {.data = NULL, .size = 0};
-          db_request(db, game_format_sql, callback, &resp_buf, &err_msg,
+          cJSON *json_array = cJSON_CreateObject();
+          if (!json_array) {
+            fprintf(stderr, "ERROR: Failed to create JSON object.\n");
+            return 0;
+          }
+          db_request(db, game_format_sql, callback_game_by_id, json_array, &err_msg,
                      "Fetched game by id");
 
-          if (resp_buf.data) {
-            response = construct_response(resp_buf.data);
-            free(resp_buf.data);
+          char *json_string = cJSON_PrintUnformatted(json_array);
+
+          if (json_string) {
+            response = construct_response(json_string);
+            free(json_string);
           } else {
-            response = construct_response("No data found.");
+            response = construct_response(
+                "{\"error\": \"Failed to serialize JSON.\"}");
           }
+          cJSON_Delete(json_array);
         }
       }
     } else {
