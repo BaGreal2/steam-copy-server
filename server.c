@@ -25,7 +25,7 @@ int callback(void *unused, int argc, char **argv, char **colName)
 
 void db_request(sqlite3 *db, const char *sql,
                 int (*callback)(void *, int, char **, char **), void *data,
-                char **err_msg)
+                char **err_msg, void *description)
 {
   int rc = sqlite3_exec(db, sql, callback, data, err_msg);
 
@@ -34,11 +34,15 @@ void db_request(sqlite3 *db, const char *sql,
     sqlite3_free(*err_msg);
     *err_msg = NULL;
   } else {
-    printf("SQL query executed successfully.\n");
+    if (description) {
+      printf("LOG: %s\n", (char *)description);
+    } else {
+      printf("LOG: SQL query executed successfully.\n");
+    }
   }
 }
 
-char *extract_path(const char *request)
+char *extract_path(char *request)
 {
   const char *path_start = strchr(request, ' ') + 1;
   const char *path_end = strchr(path_start, ' ');
@@ -50,7 +54,33 @@ char *extract_path(const char *request)
   return path;
 }
 
-char *extract_method(const char *request)
+char *extract_path_base(char *path)
+{
+  const char *path_base_end = strchr(path + 1, '/');
+  if (!path_base_end) {
+    return path;
+  }
+  int path_base_length = path_base_end - path;
+  char *path_base = malloc(path_base_length + 1);
+  strncpy(path_base, path, path_base_length);
+  path_base[path_base_length] = '\0';
+  return path_base;
+}
+
+char *extract_path_id(char *path)
+{
+  const char *id_start = strrchr(path, '/') + 1;
+  int id_length = strlen(id_start);
+  if (id_length == strlen(path) - 1) {
+    return 0;
+  }
+  char *id = malloc(id_length + 1);
+  strncpy(id, id_start, id_length);
+  id[id_length] = '\0';
+  return id;
+}
+
+char *extract_method(char *request)
 {
   const char *method_end = strchr(request, ' ');
 
@@ -61,7 +91,7 @@ char *extract_method(const char *request)
   return method;
 }
 
-char *construct_response(const char *body)
+char *construct_response(char *body)
 {
   char *response = malloc(strlen(body) + 100);
   sprintf(response,
@@ -88,48 +118,46 @@ int main()
   }
   printf("LOG: Opened database successfully.\n");
 
-  TableSchema tables[] = {
-      {"Users", "CREATE TABLE IF NOT EXISTS Users("
-                "user_id INTEGER PRIMARY KEY AUTOINCREMENT, "
-                "username TEXT NOT NULL UNIQUE, "
-                "email TEXT NOT NULL UNIQUE, "
-                "created_at DATETIME DEFAULT CURRENT_TIMESTAMP);"},
-      {"Games", "CREATE TABLE IF NOT EXISTS Games("
-                "game_id INTEGER PRIMARY KEY AUTOINCREMENT, "
-                "title TEXT NOT NULL, "
-                "genre TEXT NOT NULL, "
-                "release_date DATE, "
-                "developer TEXT);"},
-      {"Libraries",
-       "CREATE TABLE IF NOT EXISTS Libraries("
-       "library_id INTEGER PRIMARY KEY AUTOINCREMENT, "
-       "user_id INTEGER NOT NULL, "
-       "game_id INTEGER NOT NULL, "
-       "purchased_at DATETIME DEFAULT CURRENT_TIMESTAMP, "
-       "FOREIGN KEY (user_id) REFERENCES Users(user_id) ON DELETE CASCADE, "
-       "FOREIGN KEY (game_id) REFERENCES Games(game_id) ON DELETE CASCADE, "
-       "UNIQUE(user_id, game_id));"},
-      {"Reviews",
-       "CREATE TABLE IF NOT EXISTS Reviews("
-       "review_id INTEGER PRIMARY KEY AUTOINCREMENT, "
-       "user_id INTEGER NOT NULL, "
-       "game_id INTEGER NOT NULL, "
-       "rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <=5), "
-       "review_text TEXT, "
-       "created_at DATETIME DEFAULT CURRENT_TIMESTAMP, "
-       "FOREIGN KEY (user_id) REFERENCES Users(user_id) ON DELETE CASCADE, "
-       "FOREIGN KEY (game_id) REFERENCES Games(game_id) ON DELETE CASCADE);"}};
-
-  for (size_t i = 0; i < sizeof(tables) / sizeof(tables[0]); i++) {
-    rc = sqlite3_exec(db, tables[i].sql, 0, 0, &err_msg);
-    if (rc != SQLITE_OK) {
-      fprintf(stderr, "ERROR: Failed to create table %s: %s\n", tables[i].name,
-              err_msg);
-      sqlite3_free(err_msg);
-    } else {
-      printf("LOG: Table %s created successfully.\n", tables[i].name);
-    }
-  }
+  const char *create_users_table_sql =
+      "CREATE TABLE IF NOT EXISTS Users("
+      "user_id INTEGER PRIMARY KEY AUTOINCREMENT, "
+      "username TEXT NOT NULL UNIQUE, "
+      "email TEXT NOT NULL UNIQUE, "
+      "created_at DATETIME DEFAULT CURRENT_TIMESTAMP);";
+  const char *create_games_table_sql =
+      "CREATE TABLE IF NOT EXISTS Games("
+      "game_id INTEGER PRIMARY KEY AUTOINCREMENT, "
+      "title TEXT NOT NULL, "
+      "genre TEXT NOT NULL, "
+      "release_date DATE, "
+      "developer TEXT);";
+  const char *create_libraries_table_sql =
+      "CREATE TABLE IF NOT EXISTS Libraries("
+      "library_id INTEGER PRIMARY KEY AUTOINCREMENT, "
+      "user_id INTEGER NOT NULL, "
+      "game_id INTEGER NOT NULL, "
+      "purchased_at DATETIME DEFAULT CURRENT_TIMESTAMP, "
+      "FOREIGN KEY (user_id) REFERENCES Users(user_id) ON DELETE CASCADE, "
+      "FOREIGN KEY (game_id) REFERENCES Games(game_id) ON DELETE CASCADE, "
+      "UNIQUE(user_id, game_id));";
+  const char *create_reviews_table_sql =
+      "CREATE TABLE IF NOT EXISTS Reviews("
+      "review_id INTEGER PRIMARY KEY AUTOINCREMENT, "
+      "user_id INTEGER NOT NULL, "
+      "game_id INTEGER NOT NULL, "
+      "rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <=5), "
+      "review_text TEXT, "
+      "created_at DATETIME DEFAULT CURRENT_TIMESTAMP, "
+      "FOREIGN KEY (user_id) REFERENCES Users(user_id) ON DELETE CASCADE, "
+      "FOREIGN KEY (game_id) REFERENCES Games(game_id) ON DELETE CASCADE);";
+  db_request(db, create_users_table_sql, 0, 0, &err_msg,
+             "Users table created.");
+  db_request(db, create_games_table_sql, 0, 0, &err_msg,
+             "Games table created.");
+  db_request(db, create_libraries_table_sql, 0, 0, &err_msg,
+             "Libraries table created.");
+  db_request(db, create_reviews_table_sql, 0, 0, &err_msg,
+             "Reviews table created.");
 
   // insert data...
 
@@ -179,18 +207,33 @@ int main()
     printf("Request:\n%s\n", buffer);
 
     // Step 6: Send an HTTP response
-    printf("Path:\n%s\n", extract_path(buffer));
-    printf("Method:\n%s\n", extract_method(buffer));
+    char *path = extract_path(buffer);
+    char *path_base = extract_path_base(path);
+    char *path_id = extract_path_id(path);
+    // const char *parameter = extract_parameter(path);
+    char *method = extract_method(buffer);
 
-    const char *path = extract_path(buffer);
-    const char *method = extract_method(buffer);
+    printf("Path: %s\n", path);
+    printf("Path base: %s\n", path_base);
+    printf("Path id: %s\n", path_id);
+    printf("Method: %s\n", method);
 
     char *response;
 
-    if (strcmp(path, "/games") == 0 && strcmp(method, "GET") == 0) {
-      const char *all_games_sql = "SELECT * FROM Users;";
-      db_request(db, all_games_sql, callback, 0, &err_msg);
-      response = construct_response("Games:");
+    if (strcmp(path_base, "/games") == 0) {
+      if (strcmp(method, "GET") == 0) {
+        if(!path_id) {
+          const char *all_games_sql = "SELECT * FROM Games;";
+          db_request(db, all_games_sql, callback, 0, &err_msg, 0);
+          response = construct_response("Games:");
+        } else {
+          const char *game_sql = "SELECT * FROM Games WHERE game_id = %s;";
+          char *sql = malloc(strlen(game_sql) + strlen(path_id) + 1);
+          sprintf(sql, game_sql, path_id);
+          db_request(db, sql, callback, 0, &err_msg, 0);
+          response = construct_response("Game:");
+        }
+      }
     } else if (strcmp(path, "/example") == 0 && strcmp(method, "GET") == 0) {
       response = construct_response("Example!");
     } else {
