@@ -1,8 +1,8 @@
-GET    /games                  -> get all games
-POST   /games                  -> add a new game
-GET    /games/:id              -> get game by id
-DELETE /games/:id              -> delete game by id
-PUT    /games/:id              -> update game by id
+GET    /games                  -> get all games     - DONE
+POST   /games                  -> add a new game    - DONE
+GET    /games/:id              -> get game by id    - DONE
+DELETE /games/:id              -> delete game by id - DONE
+PATCH  /games/:id              -> update game by id - DONE
 
 POST /register -> register
 POST /login    -> login

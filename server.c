@@ -126,6 +126,19 @@ char *extract_method(char *request)
   return method;
 }
 
+char *extract_body(char *request)
+{
+  const char *body_start = strstr(request, "\r\n\r\n") + 4;
+  if (!body_start) {
+    return 0;
+  }
+  int body_length = strlen(body_start);
+  char *body = malloc(body_length + 1);
+  strncpy(body, body_start, body_length);
+  body[body_length] = '\0';
+  return body;
+}
+
 char *construct_response(int status_code, const char *body)
 {
   const char *status_text;
@@ -269,6 +282,7 @@ int main()
     char *path_base = extract_path_base(path);
     char *path_id = extract_path_id(path);
     char *method = extract_method(buffer);
+    char *body = extract_body(buffer);
 
     printf("Path: %s\n", path);
     printf("Path base: %s\n", path_base);
@@ -279,8 +293,8 @@ int main()
 
     if (strcmp(path_base, "/games") == 0) {
       if (strcmp(method, "GET") == 0) {
-        // GET /games
         if (!path_id) {
+          // GET /games
           const char *all_games_sql = "SELECT * FROM Games;";
 
           cJSON *json_array = cJSON_CreateArray();
@@ -300,21 +314,21 @@ int main()
             response = construct_response(
                 500, "{\"error\": \"Failed to serialize JSON.\"}");
           }
-          cJSON_Delete(json_array);
 
-          // GET /games/:id
+          cJSON_Delete(json_array);
         } else {
-          const char *game_sql = "SELECT * FROM Games WHERE game_id = %s;";
-          char *game_format_sql =
-              malloc(strlen(game_sql) + strlen(path_id) + 1);
-          sprintf(game_format_sql, game_sql, path_id);
+          // GET /games/:id
+          const char *game_by_id_sql = "SELECT * FROM Games WHERE game_id = %s;";
+          char *game_by_id_format_sql =
+              malloc(strlen(game_by_id_sql) + strlen(path_id) + 1);
+          sprintf(game_by_id_format_sql, game_by_id_sql, path_id);
 
           cJSON *json_array = cJSON_CreateObject();
           if (!json_array) {
             fprintf(stderr, "ERROR: Failed to create JSON object.\n");
             return 0;
           }
-          db_request(db, game_format_sql, callback_game_by_id, json_array,
+          db_request(db, game_by_id_format_sql, callback_game_by_id, json_array,
                      &err_msg, "Fetched game by id");
 
           char *json_string = cJSON_PrintUnformatted(json_array);
@@ -326,8 +340,141 @@ int main()
             response = construct_response(
                 500, "{\"error\": \"Failed to serialize JSON.\"}");
           }
+
           cJSON_Delete(json_array);
+          free(game_by_id_format_sql);
         }
+      } else if (strcmp(method, "POST") == 0) {
+        // POST /games
+        const char *insert_game_sql =
+            "INSERT INTO Games (title, genre, release_date, developer) "
+            "VALUES ('%s', '%s', '%s', '%s');";
+        char *insert_game_format_sql = malloc(strlen(insert_game_sql) + 200);
+
+        cJSON *json = cJSON_Parse(body);
+        if (!json) {
+          response = construct_response(
+              400, "{\"error\": \"Failed to parse JSON request body.\"}");
+        } else {
+          cJSON *title = cJSON_GetObjectItem(json, "title");
+          if (!title) {
+            response = construct_response(
+                400, "{\"error\": \"Missing required field: title.\"}");
+            send(new_socket, response, strlen(response), 0);
+            continue;
+          }
+          cJSON *genre = cJSON_GetObjectItem(json, "genre");
+          if (!genre) {
+            response = construct_response(
+                400, "{\"error\": \"Missing required field: genre.\"}");
+            send(new_socket, response, strlen(response), 0);
+            continue;
+          }
+          cJSON *release_date = cJSON_GetObjectItem(json, "release_date");
+          if (!release_date) {
+            response = construct_response(
+                400, "{\"error\": \"Missing required field: release_date.\"}");
+            send(new_socket, response, strlen(response), 0);
+            continue;
+          }
+          cJSON *developer = cJSON_GetObjectItem(json, "developer");
+          if (!developer) {
+            response = construct_response(
+                400, "{\"error\": \"Missing required field: developer.\"}");
+            send(new_socket, response, strlen(response), 0);
+            continue;
+          }
+
+          sprintf(insert_game_format_sql, insert_game_sql, title->valuestring,
+                  genre->valuestring, release_date->valuestring,
+                  developer->valuestring);
+
+          db_request(db, insert_game_format_sql, 0, 0, &err_msg,
+                     "Inserted game");
+
+          response =
+              construct_response(200, "{\"message\": \"Game inserted.\"}");
+        }
+
+        cJSON_Delete(json);
+        free(insert_game_format_sql);
+      } else if (strcmp(method, "DELETE") == 0 && path_id) {
+        // DELETE /games/:id
+        const char *delete_game_sql = "DELETE FROM Games WHERE game_id = %s;";
+        char *delete_game_format_sql =
+            malloc(strlen(delete_game_sql) + strlen(path_id) + 1);
+        sprintf(delete_game_format_sql, delete_game_sql, path_id);
+
+        db_request(db, delete_game_format_sql, 0, 0, &err_msg,
+                   "Deleted game by id");
+
+        response = construct_response(200, "{\"message\": \"Game deleted.\"}");
+        free(delete_game_format_sql);
+      } else if (strcmp(method, "PATCH") == 0 && path_id) {
+        // PUT /games/:id
+        char *update_game_sql =
+            malloc(1024); // Allocate sufficient initial space
+        sprintf(update_game_sql, "UPDATE Games SET ");
+        int has_updates = 0;
+
+        cJSON *json = cJSON_Parse(body);
+        if (!json) {
+          response = construct_response(
+              400, "{\"error\": \"Failed to parse JSON request body.\"}");
+        } else {
+          cJSON *title = cJSON_GetObjectItem(json, "title");
+          cJSON *genre = cJSON_GetObjectItem(json, "genre");
+          cJSON *release_date = cJSON_GetObjectItem(json, "release_date");
+          cJSON *developer = cJSON_GetObjectItem(json, "developer");
+
+          if (title && cJSON_IsString(title)) {
+            strcat(update_game_sql, "title = '");
+            strcat(update_game_sql, title->valuestring);
+            strcat(update_game_sql, "', ");
+            has_updates = 1;
+          }
+          if (genre && cJSON_IsString(genre)) {
+            strcat(update_game_sql, "genre = '");
+            strcat(update_game_sql, genre->valuestring);
+            strcat(update_game_sql, "', ");
+            has_updates = 1;
+          }
+          if (release_date && cJSON_IsString(release_date)) {
+            strcat(update_game_sql, "release_date = '");
+            strcat(update_game_sql, release_date->valuestring);
+            strcat(update_game_sql, "', ");
+            has_updates = 1;
+          }
+          if (developer && cJSON_IsString(developer)) {
+            strcat(update_game_sql, "developer = '");
+            strcat(update_game_sql, developer->valuestring);
+            strcat(update_game_sql, "', ");
+            has_updates = 1;
+          }
+
+          if (has_updates) {
+            // Remove the trailing comma and space
+            update_game_sql[strlen(update_game_sql) - 2] = '\0';
+
+            // Add the WHERE clause
+            strcat(update_game_sql, " WHERE game_id = ");
+            strcat(update_game_sql, path_id);
+            strcat(update_game_sql, ";");
+
+            // Execute the SQL query
+            db_request(db, update_game_sql, 0, 0, &err_msg,
+                       "Updated game by id");
+
+            response =
+                construct_response(200, "{\"message\": \"Game updated.\"}");
+          } else {
+            response = construct_response(
+                400, "{\"error\": \"No fields provided to update.\"}");
+          }
+        }
+
+        free(update_game_sql);
+        cJSON_Delete(json);
       }
     } else {
       printf("404 Not Found\n");
