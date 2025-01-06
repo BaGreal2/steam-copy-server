@@ -9,17 +9,31 @@
 #define BUFFER_SIZE 1024
 
 typedef struct {
-  const char *name;
-  const char *sql;
-} TableSchema;
+  char *data;
+  size_t size;
+} ResponseBuffer;
 
-// Callback function for SELECT queries
-int callback(void *unused, int argc, char **argv, char **colName)
+int callback(void *buffer, int argc, char **argv, char **colName)
 {
+  ResponseBuffer *resp_buf = (ResponseBuffer *)buffer;
+
   for (int i = 0; i < argc; i++) {
-    printf("%s = %s\n", colName[i], argv[i] ? argv[i] : "NULL");
+    const char *key = colName[i];
+    const char *value = argv[i] ? argv[i] : "NULL";
+
+    size_t new_size =
+        resp_buf->size + strlen(key) + strlen(value) + 4; // "key = value\n\0"
+
+    resp_buf->data = realloc(resp_buf->data, new_size);
+    if (!resp_buf->data) {
+      fprintf(stderr, "ERROR: Memory allocation failed.\n");
+      return 1; // Abort query
+    }
+
+    sprintf(resp_buf->data + resp_buf->size, "%s = %s\n", key, value);
+    resp_buf->size = new_size - 1;
   }
-  printf("\n");
+
   return 0;
 }
 
@@ -93,14 +107,21 @@ char *extract_method(char *request)
 
 char *construct_response(char *body)
 {
-  char *response = malloc(strlen(body) + 100);
-  sprintf(response,
-          "HTTP/1.1 200 OK\r\n"
-          "Content-Type: text/plain\r\n"
-          "Content-Length: %ld\r\n"
-          "\r\n"
-          "%s",
-          strlen(body), body);
+  const char *header = "HTTP/1.1 200 OK\r\n"
+                       "Content-Type: text/plain\r\n"
+                       "Content-Length: %zu\r\n"
+                       "\r\n";
+
+  size_t header_len = strlen(header) + strlen(body) + 20;
+  char *response = malloc(header_len);
+
+  if (!response) {
+    fprintf(stderr, "ERROR: Memory allocation failed.\n");
+    return NULL;
+  }
+
+  sprintf(response, header, strlen(body));
+  strcat(response, body);
 
   return response;
 }
@@ -210,7 +231,6 @@ int main()
     char *path = extract_path(buffer);
     char *path_base = extract_path_base(path);
     char *path_id = extract_path_id(path);
-    // const char *parameter = extract_parameter(path);
     char *method = extract_method(buffer);
 
     printf("Path: %s\n", path);
@@ -222,20 +242,39 @@ int main()
 
     if (strcmp(path_base, "/games") == 0) {
       if (strcmp(method, "GET") == 0) {
-        if(!path_id) {
+        // GET /games
+        if (!path_id) {
           const char *all_games_sql = "SELECT * FROM Games;";
-          db_request(db, all_games_sql, callback, 0, &err_msg, 0);
-          response = construct_response("Games:");
+
+          ResponseBuffer resp_buf = {.data = NULL, .size = 0};
+          db_request(db, all_games_sql, callback, &resp_buf, &err_msg,
+                     "Fetched all games");
+
+          if (resp_buf.data) {
+            response = construct_response(resp_buf.data);
+            free(resp_buf.data);
+          } else {
+            response = construct_response("No data found.");
+          }
+        // GET /games/:id
         } else {
           const char *game_sql = "SELECT * FROM Games WHERE game_id = %s;";
-          char *sql = malloc(strlen(game_sql) + strlen(path_id) + 1);
-          sprintf(sql, game_sql, path_id);
-          db_request(db, sql, callback, 0, &err_msg, 0);
-          response = construct_response("Game:");
+          char *game_format_sql =
+              malloc(strlen(game_sql) + strlen(path_id) + 1);
+          sprintf(game_format_sql, game_sql, path_id);
+
+          ResponseBuffer resp_buf = {.data = NULL, .size = 0};
+          db_request(db, game_format_sql, callback, &resp_buf, &err_msg,
+                     "Fetched game by id");
+
+          if (resp_buf.data) {
+            response = construct_response(resp_buf.data);
+            free(resp_buf.data);
+          } else {
+            response = construct_response("No data found.");
+          }
         }
       }
-    } else if (strcmp(path, "/example") == 0 && strcmp(method, "GET") == 0) {
-      response = construct_response("Example!");
     } else {
       printf("404 Not Found\n");
       response = "HTTP/1.1 404 Not Found\r\n";

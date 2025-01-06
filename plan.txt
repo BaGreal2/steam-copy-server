@@ -3,9 +3,6 @@ POST   /games                  -> add a new game
 GET    /games/:id              -> get game by id
 DELETE /games/:id              -> delete game by id
 PUT    /games/:id              -> update game by id
-GET    /games/:id/achievements -> get all achievements from game
-GET    /games/:id/reviews      -> get all reviews from game
-POST   /games/:id/reviews      -> add a new review to game
 
 POST /register -> register
 POST /login    -> login
@@ -22,3 +19,7 @@ GET    /achievements/:id -> get achievement by id
 POST   /achievements     -> add a new achievement
 PUT    /achievements/:id -> update achievement by id
 DELETE /achievements/:id -> delete achievement by id
+GET    /achievements/game/:id -> get all achievements from game
+
+GET  /reviews/game/:id -> get all reviews from game
+POST /reviews/game/:id -> add a new review to game
