@@ -14,7 +14,7 @@ typedef struct {
   size_t size;
 } ResponseBuffer;
 
-int callback_all_games(void *buffer, int argc, char **argv, char **colName)
+int callback_array(void *buffer, int argc, char **argv, char **colName)
 {
   cJSON *json_array = (cJSON *)buffer;
 
@@ -40,7 +40,7 @@ int callback_all_games(void *buffer, int argc, char **argv, char **colName)
   return 0;
 }
 
-int callback_game_by_id(void *buffer, int argc, char **argv, char **colName)
+int callback_object(void *buffer, int argc, char **argv, char **colName)
 {
   cJSON *json_object = (cJSON *)buffer;
 
@@ -193,13 +193,17 @@ int main()
       "user_id INTEGER PRIMARY KEY AUTOINCREMENT, "
       "username TEXT NOT NULL UNIQUE, "
       "email TEXT NOT NULL UNIQUE, "
+      "password TEXT NOT NULL, "
+      "profile_image TEXT, "
       "created_at DATETIME DEFAULT CURRENT_TIMESTAMP);";
   const char *create_games_table_sql =
       "CREATE TABLE IF NOT EXISTS Games("
       "game_id INTEGER PRIMARY KEY AUTOINCREMENT, "
       "title TEXT NOT NULL, "
       "genre TEXT NOT NULL, "
-      "release_date DATE, "
+      "cover_image TEXT NOT NULL, "
+      "icon_image TEXT NOT NULL, "
+      "release_date DATETIME DEFAULT CURRENT_TIMESTAMP, "
       "developer TEXT);";
   const char *create_libraries_table_sql =
       "CREATE TABLE IF NOT EXISTS Libraries("
@@ -325,9 +329,8 @@ int main()
             fprintf(stderr, "ERROR: Failed to create JSON object.\n");
             return 0;
           }
-          db_request(db, game_by_id_format_sql, callback_game_by_id, json,
+          db_request(db, game_by_id_format_sql, callback_object, json,
                      &err_msg, "Fetched game by id");
-
 
           int response_code = 200;
           if (cJSON_GetArraySize(json) == 0) {
@@ -356,7 +359,7 @@ int main()
             fprintf(stderr, "ERROR: Failed to create JSON array.\n");
             return 0;
           }
-          db_request(db, all_games_sql, callback_all_games, json_array,
+          db_request(db, all_games_sql, callback_array, json_array,
                      &err_msg, "Fetched all games");
 
           char *json_string = cJSON_PrintUnformatted(json_array);
@@ -374,8 +377,8 @@ int main()
       } else if (strcmp(method, "POST") == 0) {
         // POST /games
         const char *insert_game_sql =
-            "INSERT INTO Games (title, genre, release_date, developer) "
-            "VALUES ('%s', '%s', '%s', '%s');";
+            "INSERT INTO Games (title, genre, cover_image, icon_image, developer) "
+            "VALUES ('%s', '%s', '%s', '%s', '%s');";
         char *insert_game_format_sql = malloc(strlen(insert_game_sql) + 200);
 
         cJSON *json = cJSON_Parse(body);
@@ -397,10 +400,17 @@ int main()
             send(new_socket, response, strlen(response), 0);
             continue;
           }
-          cJSON *release_date = cJSON_GetObjectItem(json, "release_date");
-          if (!release_date) {
+          cJSON *cover_image = cJSON_GetObjectItem(json, "cover_image");
+          if (!cover_image) {
             response = construct_response(
-                400, "{\"error\": \"Missing required field: release_date.\"}");
+                400, "{\"error\": \"Missing required field: cover_image.\"}");
+            send(new_socket, response, strlen(response), 0);
+            continue;
+          }
+          cJSON *icon_image = cJSON_GetObjectItem(json, "icon_image");
+          if (!icon_image) {
+            response = construct_response(
+                400, "{\"error\": \"Missing required field: icon_image.\"}");
             send(new_socket, response, strlen(response), 0);
             continue;
           }
@@ -413,7 +423,7 @@ int main()
           }
 
           sprintf(insert_game_format_sql, insert_game_sql, title->valuestring,
-                  genre->valuestring, release_date->valuestring,
+                  genre->valuestring,
                   developer->valuestring);
 
           db_request(db, insert_game_format_sql, 0, 0, &err_msg,
@@ -439,8 +449,7 @@ int main()
         free(delete_game_format_sql);
       } else if (strcmp(method, "PATCH") == 0 && path_id) {
         // PUT /games/:id
-        char *update_game_sql =
-            malloc(1024); // Allocate sufficient initial space
+        char *update_game_sql = malloc(1024);
         sprintf(update_game_sql, "UPDATE Games SET ");
         int has_updates = 0;
 
@@ -451,6 +460,8 @@ int main()
         } else {
           cJSON *title = cJSON_GetObjectItem(json, "title");
           cJSON *genre = cJSON_GetObjectItem(json, "genre");
+          cJSON *cover_image = cJSON_GetObjectItem(json, "cover_image");
+          cJSON *icon_image = cJSON_GetObjectItem(json, "icon_image");
           cJSON *release_date = cJSON_GetObjectItem(json, "release_date");
           cJSON *developer = cJSON_GetObjectItem(json, "developer");
 
@@ -463,6 +474,18 @@ int main()
           if (genre && cJSON_IsString(genre)) {
             strcat(update_game_sql, "genre = '");
             strcat(update_game_sql, genre->valuestring);
+            strcat(update_game_sql, "', ");
+            has_updates = 1;
+          }
+          if (cover_image && cJSON_IsString(cover_image)) {
+            strcat(update_game_sql, "cover_image = '");
+            strcat(update_game_sql, cover_image->valuestring);
+            strcat(update_game_sql, "', ");
+            has_updates = 1;
+          }
+          if (icon_image && cJSON_IsString(icon_image)) {
+            strcat(update_game_sql, "icon_image = '");
+            strcat(update_game_sql, icon_image->valuestring);
             strcat(update_game_sql, "', ");
             has_updates = 1;
           }
@@ -502,6 +525,114 @@ int main()
 
         free(update_game_sql);
         cJSON_Delete(json);
+      }
+    } else if (strcmp(path_base, "/register") == 0 &&
+               strcmp(method, "POST") == 0) {
+      char *create_user_sql = "INSERT INTO Users (username, email, password, profile_image) "
+                              "VALUES ('%s', '%s', '%s', '%s');";
+      char *create_user_format_sql = malloc(strlen(create_user_sql) + 200);
+
+      cJSON *json = cJSON_Parse(body);
+
+      if (!json) {
+        response = construct_response(
+            400, "{\"error\": \"Failed to parse JSON request body.\"}");
+      } else {
+        cJSON *username = cJSON_GetObjectItem(json, "username");
+        if (!username) {
+          response = construct_response(
+              400, "{\"error\": \"Missing required field: username.\"}");
+          send(new_socket, response, strlen(response), 0);
+          continue;
+        }
+        cJSON *email = cJSON_GetObjectItem(json, "email");
+        if (!email) {
+          response = construct_response(
+              400, "{\"error\": \"Missing required field: email.\"}");
+          send(new_socket, response, strlen(response), 0);
+          continue;
+        }
+        cJSON *password = cJSON_GetObjectItem(json, "password");
+        if (!password) {
+          response = construct_response(
+              400, "{\"error\": \"Missing required field: password.\"}");
+          send(new_socket, response, strlen(response), 0);
+          continue;
+        }
+        cJSON *profile_image = cJSON_GetObjectItem(json, "profile_image");
+        if (!profile_image) {
+          response = construct_response(
+              400, "{\"error\": \"Missing required field: profile_image.\"}");
+          send(new_socket, response, strlen(response), 0);
+          continue;
+        }
+
+        char *hashed_password = crypt(password->valuestring, "salt");
+
+        sprintf(create_user_format_sql, create_user_sql, username->valuestring,
+                email->valuestring, hashed_password, profile_image->valuestring);
+
+        db_request(db, create_user_format_sql, 0, 0, &err_msg, "Inserted user");
+
+        response =
+            construct_response(200, "{\"message\": \"User registered.\"}");
+      }
+    } else if (strcmp(path_base, "/login") == 0 &&
+               strcmp(method, "POST") == 0) {
+      cJSON *json = cJSON_Parse(body);
+      if (!json) {
+        response = construct_response(
+            400, "{\"error\": \"Failed to parse JSON request body.\"}");
+      } else {
+        cJSON *email = cJSON_GetObjectItem(json, "email");
+        if (!email) {
+          response = construct_response(
+              400, "{\"error\": \"Missing required field: email.\"}");
+          send(new_socket, response, strlen(response), 0);
+          continue;
+        }
+        cJSON *password = cJSON_GetObjectItem(json, "password");
+        if (!password) {
+          response = construct_response(
+              400, "{\"error\": \"Missing required field: password.\"}");
+          send(new_socket, response, strlen(response), 0);
+          continue;
+        }
+
+        char *hashed_password = crypt(password->valuestring, "salt");
+
+        const char *login_sql =
+            "SELECT * FROM Users WHERE email = '%s' AND password = '%s';";
+        char *login_format_sql = malloc(strlen(login_sql) + 200);
+        sprintf(login_format_sql, login_sql, email->valuestring,
+                hashed_password);
+
+        cJSON *json = cJSON_CreateObject();
+        if (!json) {
+          fprintf(stderr, "ERROR: Failed to create JSON object.\n");
+          return 0;
+        }
+        db_request(db, login_format_sql, callback_object, json, &err_msg,
+                   "Fetched user by email and password");
+
+        int response_code = 200;
+        if (cJSON_GetArraySize(json) == 0) {
+          response_code = 404;
+          cJSON_AddStringToObject(json, "error", "User not found.");
+        }
+
+        char *json_string = cJSON_PrintUnformatted(json);
+
+        if (json_string) {
+          response = construct_response(response_code, json_string);
+          free(json_string);
+        } else {
+          response = construct_response(
+              500, "{\"error\": \"Failed to serialize JSON.\"}");
+        }
+
+        cJSON_Delete(json);
+        free(login_format_sql);
       }
     } else {
       printf("404 Not Found\n");

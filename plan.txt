@@ -4,8 +4,8 @@ GET    /games/:id              -> get game by id    - DONE
 DELETE /games/:id              -> delete game by id - DONE
 PATCH  /games/:id              -> update game by id - DONE
 
-POST /register -> register
-POST /login    -> login
+POST /register -> register - DONE
+POST /login    -> login    - IN PROGRESS
 POST /logout   -> logout
 
 GET    /me                  -> get my user info
