@@ -329,8 +329,8 @@ int main()
             fprintf(stderr, "ERROR: Failed to create JSON object.\n");
             return 0;
           }
-          db_request(db, game_by_id_format_sql, callback_object, json,
-                     &err_msg, "Fetched game by id");
+          db_request(db, game_by_id_format_sql, callback_object, json, &err_msg,
+                     "Fetched game by id");
 
           int response_code = 200;
           if (cJSON_GetArraySize(json) == 0) {
@@ -359,8 +359,8 @@ int main()
             fprintf(stderr, "ERROR: Failed to create JSON array.\n");
             return 0;
           }
-          db_request(db, all_games_sql, callback_array, json_array,
-                     &err_msg, "Fetched all games");
+          db_request(db, all_games_sql, callback_array, json_array, &err_msg,
+                     "Fetched all games");
 
           char *json_string = cJSON_PrintUnformatted(json_array);
 
@@ -376,9 +376,9 @@ int main()
         }
       } else if (strcmp(method, "POST") == 0) {
         // POST /games
-        const char *insert_game_sql =
-            "INSERT INTO Games (title, genre, cover_image, icon_image, developer) "
-            "VALUES ('%s', '%s', '%s', '%s', '%s');";
+        const char *insert_game_sql = "INSERT INTO Games (title, genre, "
+                                      "cover_image, icon_image, developer) "
+                                      "VALUES ('%s', '%s', '%s', '%s', '%s');";
         char *insert_game_format_sql = malloc(strlen(insert_game_sql) + 200);
 
         cJSON *json = cJSON_Parse(body);
@@ -423,8 +423,8 @@ int main()
           }
 
           sprintf(insert_game_format_sql, insert_game_sql, title->valuestring,
-                  genre->valuestring,
-                  developer->valuestring);
+                  genre->valuestring, cover_image->valuestring,
+                  icon_image->valuestring, developer->valuestring);
 
           db_request(db, insert_game_format_sql, 0, 0, &err_msg,
                      "Inserted game");
@@ -528,8 +528,10 @@ int main()
       }
     } else if (strcmp(path_base, "/register") == 0 &&
                strcmp(method, "POST") == 0) {
-      char *create_user_sql = "INSERT INTO Users (username, email, password, profile_image) "
-                              "VALUES ('%s', '%s', '%s', '%s');";
+      // POST /register
+      char *create_user_sql =
+          "INSERT INTO Users (username, email, password, profile_image) "
+          "VALUES ('%s', '%s', '%s', '%s');";
       char *create_user_format_sql = malloc(strlen(create_user_sql) + 200);
 
       cJSON *json = cJSON_Parse(body);
@@ -570,7 +572,8 @@ int main()
         char *hashed_password = crypt(password->valuestring, "salt");
 
         sprintf(create_user_format_sql, create_user_sql, username->valuestring,
-                email->valuestring, hashed_password, profile_image->valuestring);
+                email->valuestring, hashed_password,
+                profile_image->valuestring);
 
         db_request(db, create_user_format_sql, 0, 0, &err_msg, "Inserted user");
 
@@ -579,6 +582,7 @@ int main()
       }
     } else if (strcmp(path_base, "/login") == 0 &&
                strcmp(method, "POST") == 0) {
+      // POST /login
       cJSON *json = cJSON_Parse(body);
       if (!json) {
         response = construct_response(
