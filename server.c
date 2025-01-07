@@ -67,7 +67,6 @@ void db_request(sqlite3 *db, const char *sql,
   if (rc != SQLITE_OK) {
     fprintf(stderr, "ERROR: Failed to execute SQL: %s\n", *err_msg);
     sqlite3_free(*err_msg);
-    *err_msg = NULL;
   } else {
     if (description) {
       printf("LOG: %s\n", (char *)description);
@@ -162,8 +161,8 @@ char *construct_response(int status_code, const char *body)
                               "Content-Length: %zu\r\n"
                               "\r\n";
 
-  size_t header_len = strlen(header_format) + strlen(status_text) +
-                      strlen(body) + 20; // Extra for content-length
+  size_t header_len =
+      strlen(header_format) + strlen(status_text) + strlen(body) + 20;
   char *response = malloc(header_len);
   if (!response) {
     fprintf(stderr, "ERROR: Memory allocation failed.\n");
@@ -221,6 +220,24 @@ int main()
       "created_at DATETIME DEFAULT CURRENT_TIMESTAMP, "
       "FOREIGN KEY (user_id) REFERENCES Users(user_id) ON DELETE CASCADE, "
       "FOREIGN KEY (game_id) REFERENCES Games(game_id) ON DELETE CASCADE);";
+  const char *create_achievements_table_sql =
+      "CREATE TABLE IF NOT EXISTS Achievements("
+      "achievement_id INTEGER PRIMARY KEY AUTOINCREMENT, "
+      "game_id INTEGER NOT NULL, "
+      "name TEXT NOT NULL, "
+      "description TEXT NOT NULL, "
+      "points INTEGER NOT NULL, "
+      "FOREIGN KEY (game_id) REFERENCES Games(game_id) ON DELETE CASCADE);";
+  const char *create_user_achievements_table_sql =
+      "CREATE TABLE IF NOT EXISTS User_Achievements("
+      "user_achievement_id INTEGER PRIMARY KEY AUTOINCREMENT, "
+      "user_id INTEGER NOT NULL, "
+      "achievement_id INTEGER NOT NULL, "
+      "unlocked_at DATETIME DEFAULT CURRENT_TIMESTAMP, "
+      "FOREIGN KEY (user_id) REFERENCES Users(user_id) ON DELETE CASCADE, "
+      "FOREIGN KEY (achievement_id) REFERENCES Achievements(achievement_id) ON "
+      "DELETE CASCADE);";
+
   db_request(db, create_users_table_sql, 0, 0, &err_msg,
              "Users table created.");
   db_request(db, create_games_table_sql, 0, 0, &err_msg,
@@ -229,8 +246,10 @@ int main()
              "Libraries table created.");
   db_request(db, create_reviews_table_sql, 0, 0, &err_msg,
              "Reviews table created.");
-
-  // insert data...
+  db_request(db, create_achievements_table_sql, 0, 0, &err_msg,
+             "Achievements table created.");
+  db_request(db, create_user_achievements_table_sql, 0, 0, &err_msg,
+             "User_Achievements table created.");
 
   int server_fd, new_socket;
   struct sockaddr_in address;
@@ -293,7 +312,42 @@ int main()
 
     if (strcmp(path_base, "/games") == 0) {
       if (strcmp(method, "GET") == 0) {
-        if (!path_id) {
+        if (path_id) {
+          // GET /games/:id
+          const char *game_by_id_sql =
+              "SELECT * FROM Games WHERE game_id = %s;";
+          char *game_by_id_format_sql =
+              malloc(strlen(game_by_id_sql) + strlen(path_id) + 1);
+          sprintf(game_by_id_format_sql, game_by_id_sql, path_id);
+
+          cJSON *json = cJSON_CreateObject();
+          if (!json) {
+            fprintf(stderr, "ERROR: Failed to create JSON object.\n");
+            return 0;
+          }
+          db_request(db, game_by_id_format_sql, callback_game_by_id, json,
+                     &err_msg, "Fetched game by id");
+
+
+          int response_code = 200;
+          if (cJSON_GetArraySize(json) == 0) {
+            response_code = 404;
+            cJSON_AddStringToObject(json, "error", "Game not found.");
+          }
+
+          char *json_string = cJSON_PrintUnformatted(json);
+
+          if (json_string) {
+            response = construct_response(response_code, json_string);
+            free(json_string);
+          } else {
+            response = construct_response(
+                500, "{\"error\": \"Failed to serialize JSON.\"}");
+          }
+
+          cJSON_Delete(json);
+          free(game_by_id_format_sql);
+        } else {
           // GET /games
           const char *all_games_sql = "SELECT * FROM Games;";
 
@@ -316,33 +370,6 @@ int main()
           }
 
           cJSON_Delete(json_array);
-        } else {
-          // GET /games/:id
-          const char *game_by_id_sql = "SELECT * FROM Games WHERE game_id = %s;";
-          char *game_by_id_format_sql =
-              malloc(strlen(game_by_id_sql) + strlen(path_id) + 1);
-          sprintf(game_by_id_format_sql, game_by_id_sql, path_id);
-
-          cJSON *json_array = cJSON_CreateObject();
-          if (!json_array) {
-            fprintf(stderr, "ERROR: Failed to create JSON object.\n");
-            return 0;
-          }
-          db_request(db, game_by_id_format_sql, callback_game_by_id, json_array,
-                     &err_msg, "Fetched game by id");
-
-          char *json_string = cJSON_PrintUnformatted(json_array);
-
-          if (json_string) {
-            response = construct_response(200, json_string);
-            free(json_string);
-          } else {
-            response = construct_response(
-                500, "{\"error\": \"Failed to serialize JSON.\"}");
-          }
-
-          cJSON_Delete(json_array);
-          free(game_by_id_format_sql);
         }
       } else if (strcmp(method, "POST") == 0) {
         // POST /games
