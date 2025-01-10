@@ -9,5 +9,8 @@ void request_post_game(sqlite3 *db, char *body, char **response, char **err_msg,
 void request_delete_game_by_id(sqlite3 *db, char *id, char **response, char **err_msg);
 void request_patch_game_by_id(sqlite3 *db, char *id, char *body, char **response, char **err_msg);
 
+void request_get_reviews_by_game_id(sqlite3 *db, char *id, char **response, char **err_msg);
+void request_post_review(sqlite3 *db, char *id, char *body, char **response, char **err_msg, int socket);
+
 void request_post_register(sqlite3 *db, char *body, char **response, char **err_msg, int socket);
 void request_post_login(sqlite3 *db, char *body, char **response, char **err_msg, int socket);

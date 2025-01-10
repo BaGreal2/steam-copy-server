@@ -4,11 +4,14 @@ GET    /games/:id              -> get game by id    - DONE
 DELETE /games/:id              -> delete game by id - DONE
 PATCH  /games/:id              -> update game by id - DONE
 
-POST /register -> register - DONE
-POST /login    -> login    - IN PROGRESS
-POST /logout   -> logout
+GET  /reviews/game/:id -> get all reviews from game
+POST /reviews/game/:id -> add a new review to game
 
-GET    /me                  -> get my user info
+POST /register -> register - DONE
+POST /login    -> login    - DONE
+POST /logout   -> logout   - FOR LATER
+
+# GET    /me                  -> get my user info
 GET    /me/games            -> get all games from user library
 POST   /me/games            -> add a new game to user library
 DELETE /me/games/:id        -> delete game from user library
@@ -20,6 +23,3 @@ POST   /achievements     -> add a new achievement
 PUT    /achievements/:id -> update achievement by id
 DELETE /achievements/:id -> delete achievement by id
 GET    /achievements/game/:id -> get all achievements from game
-
-GET  /reviews/game/:id -> get all reviews from game
-POST /reviews/game/:id -> add a new review to game

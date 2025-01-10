@@ -4,7 +4,6 @@
 #include <arpa/inet.h>
 #include <sqlite3.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <unistd.h>
 
 int main()
@@ -16,7 +15,7 @@ int main()
   rc = sqlite3_open("steam.db", &db);
   if (rc) {
     fprintf(stderr, "ERROR: Can't open database: %s\n", sqlite3_errmsg(db));
-    exit(EXIT_FAILURE);
+    return 1;
   }
   printf("LOG: Opened database successfully.\n");
 
@@ -30,24 +29,23 @@ int main()
   server_fd = socket(AF_INET, SOCK_STREAM, 0);
   if (server_fd == 0) {
     perror("ERROR: Socket failed");
-    exit(EXIT_FAILURE);
+    return 1;
   }
 
-  // Bind the socket to an address and port
-  address.sin_family = AF_INET;         // IPv4
-  address.sin_addr.s_addr = INADDR_ANY; // Accept connections from any IP
-  address.sin_port = htons(PORT);       // Convert port to network byte order
+  address.sin_family = AF_INET;
+  address.sin_addr.s_addr = INADDR_ANY;
+  address.sin_port = htons(PORT);
 
   if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
     perror("ERROR: Bind failed");
     close(server_fd);
-    exit(EXIT_FAILURE);
+    return 1;
   }
 
   if (listen(server_fd, 3) < 0) {
     perror("ERROR: Listen failed");
     close(server_fd);
-    exit(EXIT_FAILURE);
+    return 1;
   }
 
   printf("HTTP server is running on port %d\n", PORT);

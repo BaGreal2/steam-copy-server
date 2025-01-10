@@ -1,4 +1,5 @@
 #include "routes.h"
+#include "cJSON.h"
 #include "db.h"
 #include "http.h"
 #include <arpa/inet.h>
@@ -59,8 +60,8 @@ void request_get_game_by_id(sqlite3 *db, char *id, char **response,
     *response = construct_response(response_code, json_string);
     free(json_string);
   } else {
-    *response =
-        construct_response(INTERNAL_SERVER_ERROR, "{\"error\": \"Failed to serialize JSON.\"}");
+    *response = construct_response(
+        INTERNAL_SERVER_ERROR, "{\"error\": \"Failed to serialize JSON.\"}");
   }
 
   cJSON_Delete(json);
@@ -73,7 +74,7 @@ void request_post_game(sqlite3 *db, char *body, char **response, char **err_msg,
   const char *insert_game_sql = "INSERT INTO Games (title, genre, "
                                 "cover_image, icon_image, developer) "
                                 "VALUES ('%s', '%s', '%s', '%s', '%s');";
-  char *insert_game_format_sql = malloc(strlen(insert_game_sql) + SUCCESS);
+  char *insert_game_format_sql = malloc(strlen(insert_game_sql) + 200);
 
   cJSON *json = cJSON_Parse(body);
   if (!json) {
@@ -201,15 +202,12 @@ void request_patch_game_by_id(sqlite3 *db, char *id, char *body,
     }
 
     if (has_updates) {
-      // Remove the trailing comma and space
       update_game_sql[strlen(update_game_sql) - 2] = '\0';
 
-      // Add the WHERE clause
       strcat(update_game_sql, " WHERE game_id = ");
       strcat(update_game_sql, id);
       strcat(update_game_sql, ";");
 
-      // Execute the SQL query
       db_request(db, update_game_sql, 0, 0, err_msg, "Updated game by id");
 
       *response =
@@ -262,7 +260,8 @@ void request_post_register(sqlite3 *db, char *body, char **response,
     cJSON *profile_image = cJSON_GetObjectItem(json, "profile_image");
     if (!profile_image) {
       *response = construct_response(
-          BAD_REQUEST, "{\"error\": \"Missing required field: profile_image.\"}");
+          BAD_REQUEST,
+          "{\"error\": \"Missing required field: profile_image.\"}");
       send(socket, response, strlen(*response), 0);
       return;
     }
@@ -328,11 +327,96 @@ void request_post_login(sqlite3 *db, char *body, char **response,
       *response = construct_response(response_code, json_string);
       free(json_string);
     } else {
-      *response =
-          construct_response(INTERNAL_SERVER_ERROR, "{\"error\": \"Failed to serialize JSON.\"}");
+      *response = construct_response(
+          INTERNAL_SERVER_ERROR, "{\"error\": \"Failed to serialize JSON.\"}");
     }
 
     cJSON_Delete(json);
     free(login_format_sql);
   }
+}
+
+void request_get_reviews_by_game_id(sqlite3 *db, char *id, char **response,
+                                    char **err_msg)
+{
+  const char *review_by_game_id_sql =
+      "SELECT * FROM Reviews WHERE game_id = %s;";
+  char *review_by_game_id_format_sql =
+      malloc(strlen(review_by_game_id_sql) + strlen(id) + 1);
+  sprintf(review_by_game_id_format_sql, review_by_game_id_sql, id);
+
+  cJSON *json = cJSON_CreateArray();
+  if (!json) {
+    fprintf(stderr, "ERROR: Failed to create JSON object.\n");
+    return;
+  }
+  db_request(db, review_by_game_id_format_sql, callback_array, json, err_msg,
+             "Fetched review by id");
+
+  int response_code = SUCCESS;
+  if (cJSON_GetArraySize(json) == 0) {
+    response_code = NOT_FOUND;
+    cJSON_AddStringToObject(json, "error", "Review not found.");
+  }
+
+  char *json_string = cJSON_PrintUnformatted(json);
+  
+  if (json_string) {
+    *response = construct_response(response_code, json_string);
+    free(json_string);
+  } else {
+    *response = construct_response(
+        INTERNAL_SERVER_ERROR, "{\"error\": \"Failed to serialize JSON.\"}");
+  }
+
+  cJSON_Delete(json);
+  free(review_by_game_id_format_sql);
+}
+
+void request_post_review(sqlite3 *db, char *id, char *body, char **response,
+                         char **err_msg, int socket)
+{
+  const char *insert_review_sql = "INSERT INTO Reviews (user_id, game_id, "
+                                  "rating, review_text) "
+                                  "VALUES ('%d', '%s', '%d', '%s');";
+  char *insert_review_format_sql = malloc(strlen(insert_review_sql) + 200);
+
+  cJSON *json = cJSON_Parse(body);
+  if (!json) {
+    *response = construct_response(
+        BAD_REQUEST, "{\"error\": \"Failed to parse JSON request body.\"}");
+  } else {
+    cJSON *user_id = cJSON_GetObjectItem(json, "user_id");
+    if (!user_id) {
+      *response = construct_response(
+          BAD_REQUEST, "{\"error\": \"Missing required field: user_id.\"}");
+      send(socket, response, strlen(*response), 0);
+      return;
+    }
+    cJSON *rating = cJSON_GetObjectItem(json, "rating");
+    if (!rating) {
+      *response = construct_response(
+          BAD_REQUEST, "{\"error\": \"Missing required field: rating.\"}");
+      send(socket, response, strlen(*response), 0);
+      return;
+    }
+    cJSON *review_text = cJSON_GetObjectItem(json, "review_text");
+    if (!review_text) {
+      *response = construct_response(
+          BAD_REQUEST, "{\"error\": \"Missing required field: review_text.\"}");
+      send(socket, response, strlen(*response), 0);
+      return;
+    }
+
+    sprintf(insert_review_format_sql, insert_review_sql, user_id->valueint, id,
+            rating->valueint, review_text->valuestring);
+
+    db_request(db, insert_review_format_sql, 0, 0, err_msg, "Inserted review");
+
+    *response =
+        construct_response(SUCCESS, "{\"message\": \"Review inserted.\"}");
+  }
+
+  cJSON_Delete(json);
+  free(insert_review_format_sql);
 }

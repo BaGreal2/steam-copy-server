@@ -4,7 +4,7 @@
 
 void db_request(sqlite3 *db, const char *sql,
                 int (*callback)(void *, int, char **, char **), void *data,
-                char **err_msg, void *description)
+                char **err_msg, char *description)
 {
   int rc = sqlite3_exec(db, sql, callback, data, err_msg);
 
@@ -13,7 +13,7 @@ void db_request(sqlite3 *db, const char *sql,
     sqlite3_free(*err_msg);
   } else {
     if (description) {
-      printf("LOG: %s\n", (char *)description);
+      printf("LOG: %s\n", description);
     } else {
       printf("LOG: SQL query executed successfully.\n");
     }

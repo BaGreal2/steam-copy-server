@@ -61,9 +61,12 @@ char *extract_path(char *request)
 
 char *extract_path_base(char *path)
 {
-  const char *path_base_end = strchr(path + 1, '/');
+  const char *path_base_end = strrchr(path + 1, '/');
   if (!path_base_end) {
-    return path;
+    path_base_end = strchr(path + 1, '/');
+    if (!path_base_end) {
+      return path;
+    }
   }
   int path_base_length = path_base_end - path;
   char *path_base = malloc(path_base_length + 1);
@@ -109,7 +112,8 @@ char *extract_body(char *request)
   return body;
 }
 
-void handle_request(sqlite3 *db, char **err_msg, char buffer[BUFFER_SIZE], int socket)
+void handle_request(sqlite3 *db, char **err_msg, char buffer[BUFFER_SIZE],
+                    int socket)
 {
   read(socket, buffer, BUFFER_SIZE);
   printf("Request:\n%s\n\n", buffer);
@@ -151,6 +155,14 @@ void handle_request(sqlite3 *db, char **err_msg, char buffer[BUFFER_SIZE], int s
   } else if (strcmp(path_base, "/login") == 0 && strcmp(method, "POST") == 0) {
     // POST /login
     request_post_login(db, body, &response, err_msg, socket);
+  } else if (strcmp(path_base, "/reviews/game") == 0) {
+    if (strcmp(method, "GET") == 0 && path_id) {
+      // GET /reviews/game/:id
+      request_get_reviews_by_game_id(db, path_id, &response, err_msg);
+    } else if (strcmp(method, "POST") == 0 && path_id) {
+      // POST /reviews/game/:id
+      request_post_review(db, path_id, body, &response, err_msg, socket);
+    }
   } else {
     printf("404 Not Found\n");
     response = construct_response(NOT_FOUND, "{\"error\": \"Not Found.\"}");

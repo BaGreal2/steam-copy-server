@@ -4,7 +4,7 @@
 
 void db_request(sqlite3 *db, const char *sql,
                 int (*callback)(void *, int, char **, char **), void *data,
-                char **err_msg, void *description);
+                char **err_msg, char *description);
 
 int callback_object(void *buffer, int argc, char **argv, char **colName);
 int callback_array(void *buffer, int argc, char **argv, char **colName);
