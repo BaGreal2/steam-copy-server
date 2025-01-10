@@ -5,6 +5,18 @@
 #include <sqlite3.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <signal.h>
+#include <stdlib.h>
+
+int server_fd = -1;
+
+void handle_sigint(int sig) {
+    if (server_fd != -1) {
+        printf("\nLOG: Cleaning up and closing the server socket...\n");
+        close(server_fd);
+    }
+    exit(0);
+}
 
 int main()
 {
@@ -21,10 +33,12 @@ int main()
 
   init_tables(db, &err_msg);
 
-  int server_fd, new_socket;
+  int new_socket;
   struct sockaddr_in address;
   int addrlen = sizeof(address);
   char buffer[BUFFER_SIZE] = {0};
+
+  signal(SIGINT, handle_sigint);
 
   server_fd = socket(AF_INET, SOCK_STREAM, 0);
   if (server_fd == 0) {
