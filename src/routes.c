@@ -360,7 +360,7 @@ void request_get_reviews_by_game_id(sqlite3 *db, char *id, char **response,
   }
 
   char *json_string = cJSON_PrintUnformatted(json);
-  
+
   if (json_string) {
     *response = construct_response(response_code, json_string);
     free(json_string);
@@ -419,4 +419,92 @@ void request_post_review(sqlite3 *db, char *id, char *body, char **response,
 
   cJSON_Delete(json);
   free(insert_review_format_sql);
+}
+
+void request_get_my_games(sqlite3 *db, char *body, char **response,
+                          char **err_msg, int socket)
+
+{
+  const char *my_games_sql =
+      "SELECT Games.* "
+      "FROM Libraries "
+      "INNER JOIN Games ON Libraries.game_id = Games.game_id "
+      "WHERE Libraries.user_id = %d;";
+  char *my_games_format_sql = malloc(strlen(my_games_sql) + 200);
+
+  cJSON *json = cJSON_Parse(body);
+  if (!json) {
+    *response = construct_response(
+        BAD_REQUEST, "{\"error\": \"Failed to parse JSON request body.\"}");
+  } else {
+    cJSON *user_id = cJSON_GetObjectItem(json, "user_id");
+    if (!user_id) {
+      *response = construct_response(
+          BAD_REQUEST, "{\"error\": \"Missing required field: user_id.\"}");
+      send(socket, response, strlen(*response), 0);
+      return;
+    }
+
+    sprintf(my_games_format_sql, my_games_sql, user_id->valueint);
+
+    cJSON *json_array = cJSON_CreateArray();
+    if (!json_array) {
+      fprintf(stderr, "ERROR: Failed to create JSON array.\n");
+      return;
+    }
+    db_request(db, my_games_format_sql, callback_array, json_array, err_msg,
+               "Fetched library games");
+
+    char *json_string = cJSON_PrintUnformatted(json_array);
+
+    if (json_string) {
+      *response = construct_response(SUCCESS, json_string);
+      free(json_string);
+    } else {
+      *response = construct_response(
+          INTERNAL_SERVER_ERROR, "{\"error\": \"Failed to serialize JSON.\"}");
+    }
+
+    cJSON_Delete(json_array);
+  }
+}
+
+void request_post_my_game(sqlite3 *db, char *body, char **response,
+                          char **err_msg, int socket)
+
+{
+  const char *insert_my_game_sql = "INSERT INTO Libraries (user_id, game_id) "
+                                   "VALUES ('%d', '%d');";
+
+  char *insert_my_game_format_sql = malloc(strlen(insert_my_game_sql) + 200);
+
+  cJSON *json = cJSON_Parse(body);
+  if (!json) {
+    *response = construct_response(
+        BAD_REQUEST, "{\"error\": \"Failed to parse JSON request body.\"}");
+  } else {
+    cJSON *user_id = cJSON_GetObjectItem(json, "user_id");
+    if (!user_id) {
+      *response = construct_response(
+          BAD_REQUEST, "{\"error\": \"Missing required field: user_id.\"}");
+      send(socket, response, strlen(*response), 0);
+      return;
+    }
+    cJSON *game_id = cJSON_GetObjectItem(json, "game_id");
+    if (!game_id) {
+      *response = construct_response(
+          BAD_REQUEST, "{\"error\": \"Missing required field: game_id.\"}");
+      send(socket, response, strlen(*response), 0);
+      return;
+    }
+
+    sprintf(insert_my_game_format_sql, insert_my_game_sql, user_id->valueint,
+            game_id->valueint);
+
+    db_request(db, insert_my_game_format_sql, callback_array, 0, err_msg,
+               "Insert game intp library");
+
+    *response =
+        construct_response(SUCCESS, "{\"message\": \"Game inserted to library.\"}");
+  }
 }

@@ -14,3 +14,6 @@ void request_post_review(sqlite3 *db, char *id, char *body, char **response, cha
 
 void request_post_register(sqlite3 *db, char *body, char **response, char **err_msg, int socket);
 void request_post_login(sqlite3 *db, char *body, char **response, char **err_msg, int socket);
+
+void request_get_my_games(sqlite3 *db, char *body, char **response, char **err_msg, int socket);
+void request_post_my_game(sqlite3 *db, char *body, char **response, char **err_msg, int socket);

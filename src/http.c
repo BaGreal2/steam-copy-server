@@ -61,25 +61,39 @@ char *extract_path(char *request)
 
 char *extract_path_base(char *path)
 {
-  const char *path_base_end = strrchr(path + 1, '/');
-  if (!path_base_end) {
-    path_base_end = strchr(path + 1, '/');
-    if (!path_base_end) {
-      return path;
+  if (!path || *path == '\0') {
+    return 0;
+  }
+
+  const char *last_slash = strrchr(path, '/');
+  if (!last_slash || last_slash == path) {
+    return strdup(path);
+  }
+
+  const char *potential_id = last_slash + 1;
+  for (const char *p = potential_id; *p != '\0'; p++) {
+    if (*p < '0' || *p > '9') {
+      return strdup(path);
     }
   }
-  int path_base_length = path_base_end - path;
-  char *path_base = malloc(path_base_length + 1);
-  strncpy(path_base, path, path_base_length);
-  path_base[path_base_length] = '\0';
-  return path_base;
+
+  size_t base_length = last_slash - path;
+  char *base_path = malloc(base_length + 1);
+  if (!base_path) {
+    return 0;
+  }
+
+  strncpy(base_path, path, base_length);
+  base_path[base_length] = '\0';
+
+  return base_path;
 }
 
 char *extract_path_id(char *path)
 {
   const char *id_start = strrchr(path, '/') + 1;
   int id_length = strlen(id_start);
-  if (id_length == strlen(path) - 1) {
+  if (id_length == (int)strlen(path) - 1) {
     return 0;
   }
   char *id = malloc(id_length + 1);
@@ -162,6 +176,14 @@ void handle_request(sqlite3 *db, char **err_msg, char buffer[BUFFER_SIZE],
     } else if (strcmp(method, "POST") == 0 && path_id) {
       // POST /reviews/game/:id
       request_post_review(db, path_id, body, &response, err_msg, socket);
+    }
+  } else if (strcmp(path_base, "/me/games") == 0) {
+    if (strcmp(method, "GET") == 0) {
+      // GET /me/games
+      request_get_my_games(db, body, &response, err_msg, socket);
+    } else if (strcmp(method, "POST") == 0) {
+      // POST /me/games
+      request_post_my_game(db, body, &response, err_msg, socket);
     }
   } else {
     printf("404 Not Found\n");
