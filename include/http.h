@@ -19,5 +19,7 @@ char *extract_path_id(char *path);
 char *extract_method(char *request);
 char *extract_body(char *request);
 
+int is_integer(const char *str);
+
 void handle_request(sqlite3 *db, char **err_msg, char buffer[BUFFER_SIZE],
                     int socket);

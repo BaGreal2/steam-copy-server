@@ -7,6 +7,22 @@
 #include <string.h>
 #include <unistd.h>
 
+int is_integer(const char *str)
+{
+  if (str == 0 || *str == '\0') {
+    return 0;
+  }
+
+  char *endptr;
+  strtol(str, &endptr, 10);
+
+  if (*endptr != '\0' || str == endptr) {
+    return 0;
+  }
+
+  return 1;
+}
+
 char *construct_response(StatusCode status_code, const char *body)
 {
   const char *status_text;
@@ -146,7 +162,7 @@ void handle_request(sqlite3 *db, char **err_msg, char buffer[BUFFER_SIZE],
   char *response;
 
   if (strcmp(path_base, "/games") == 0) {
-    if (strcmp(method, "GET") == 0 && path_id) {
+    if (strcmp(method, "GET") == 0 && is_integer(path_id)) {
       // GET /games/:id
       request_get_game_by_id(db, path_id, &response, err_msg);
     } else if (strcmp(method, "GET") == 0) {
@@ -155,10 +171,10 @@ void handle_request(sqlite3 *db, char **err_msg, char buffer[BUFFER_SIZE],
     } else if (strcmp(method, "POST") == 0) {
       // POST /games
       request_post_game(db, body, &response, err_msg, socket);
-    } else if (strcmp(method, "DELETE") == 0 && path_id) {
+    } else if (strcmp(method, "DELETE") == 0 && is_integer(path_id)) {
       // DELETE /games/:id
       request_delete_game_by_id(db, path_id, &response, err_msg);
-    } else if (strcmp(method, "PATCH") == 0 && path_id) {
+    } else if (strcmp(method, "PATCH") == 0 && is_integer(path_id)) {
       // PATCH /games/:id
       request_patch_game_by_id(db, path_id, body, &response, err_msg);
     }
@@ -170,10 +186,10 @@ void handle_request(sqlite3 *db, char **err_msg, char buffer[BUFFER_SIZE],
     // POST /login
     request_post_login(db, body, &response, err_msg, socket);
   } else if (strcmp(path_base, "/reviews/game") == 0) {
-    if (strcmp(method, "GET") == 0 && path_id) {
+    if (strcmp(method, "GET") == 0 && is_integer(path_id)) {
       // GET /reviews/game/:id
       request_get_reviews_by_game_id(db, path_id, &response, err_msg);
-    } else if (strcmp(method, "POST") == 0 && path_id) {
+    } else if (strcmp(method, "POST") == 0 && is_integer(path_id)) {
       // POST /reviews/game/:id
       request_post_review(db, path_id, body, &response, err_msg, socket);
     }
@@ -184,6 +200,40 @@ void handle_request(sqlite3 *db, char **err_msg, char buffer[BUFFER_SIZE],
     } else if (strcmp(method, "POST") == 0) {
       // POST /me/games
       request_post_my_game(db, body, &response, err_msg, socket);
+    } else if (strcmp(method, "DELETE") == 0 && is_integer(path_id)) {
+      // DELETE /me/games/:id
+      request_delete_my_game(db, path_id, body, &response, err_msg, socket);
+    }
+  } else if (strcmp(path_base, "/achievements") == 0) {
+    if (strcmp(method, "GET") == 0 && is_integer(path_id)) {
+      // GET /achievements/:id
+      request_get_achievement_by_id(db, path_id, &response, err_msg);
+    } else if (strcmp(method, "POST") == 0) {
+      // POST /achievements
+      request_post_achievement(db, body, &response, err_msg, socket);
+    } else if (strcmp(method, "PATCH") == 0 && is_integer(path_id)) {
+      // PATCH /achievements/:id
+      request_patch_achievement_by_id(db, path_id, body, &response, err_msg);
+    } else if (strcmp(method, "DELETE") == 0 && is_integer(path_id)) {
+      // DELETE /achievements/:id
+      request_delete_achievement_by_id(db, path_id, &response, err_msg);
+    }
+  } else if (strcmp(path_base, "/achievements/game") == 0) {
+    if (strcmp(method, "GET") == 0 && is_integer(path_id)) {
+      // GET /achievements/game/:id
+      request_get_achievements_by_game_id(db, path_id, &response, err_msg);
+    }
+  } else if (strcmp(path_base, "/me/achievements") == 0) {
+    if (strcmp(method, "GET") == 0 && is_integer(path_id)) {
+      // GET /me/achievements/:id
+      request_get_user_achievements_by_game_id(db, path_id, body, &response,
+                                               err_msg, socket);
+    } else if (strcmp(method, "GET") == 0) {
+      // GET /me/achievements
+      request_get_user_achievements(db, body, &response, err_msg, socket);
+    } else if (strcmp(method, "POST") == 0) {
+      // POST /me/achievements
+      request_post_user_achievement(db, body, &response, err_msg, socket);
     }
   } else {
     printf("404 Not Found\n");

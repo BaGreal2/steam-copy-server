@@ -17,3 +17,14 @@ void request_post_login(sqlite3 *db, char *body, char **response, char **err_msg
 
 void request_get_my_games(sqlite3 *db, char *body, char **response, char **err_msg, int socket);
 void request_post_my_game(sqlite3 *db, char *body, char **response, char **err_msg, int socket);
+void request_delete_my_game(sqlite3 *db, char *id, char *body, char **response, char **err_msg, int socket);
+
+void request_get_achievement_by_id(sqlite3 *db, char *id, char **response, char **err_msg);
+void request_post_achievement(sqlite3 *db, char *body, char **response, char **err_msg, int socket);
+void request_patch_achievement_by_id(sqlite3 *db, char *id, char *body, char **response, char **err_msg);
+void request_delete_achievement_by_id(sqlite3 *db, char *id, char **response, char **err_msg);
+void request_get_achievements_by_game_id(sqlite3 *db, char *id, char **response, char **err_msg);
+
+void request_get_user_achievements(sqlite3 *db, char *body, char **response, char **err_msg, int socket);
+void request_post_user_achievement(sqlite3 *db, char *body, char **response, char **err_msg, int socket);
+void request_get_user_achievements_by_game_id(sqlite3 *db, char *id, char *body, char **response, char **err_msg, int socket);

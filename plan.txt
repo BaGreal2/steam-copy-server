@@ -12,14 +12,15 @@ POST /login    -> login    - DONE
 POST /logout   -> logout   - FOR LATER
 
 # GET    /me                  -> get my user info
-GET    /me/games            -> get all games from user library - DONE
-POST   /me/games            -> add a new game to user library  - DONE
-DELETE /me/games/:id        -> delete game from user library
-GET    /me/achievements     -> get all achievements from user
-GET    /me/achievements/:id -> get all achievements from user in game
+GET    /me/games            -> get all games from user library        - DONE
+POST   /me/games            -> add a new game to user library         - DONE
+DELETE /me/games/:id        -> delete game from user library          - DONE
+POST   /me/achievements     -> add a new achievement to user          - DONE
+GET    /me/achievements     -> get all achievements from user         - DONE
+GET    /me/achievements/:id -> get all achievements from user in game - DONE
 
-GET    /achievements/:id -> get achievement by id
-POST   /achievements     -> add a new achievement
-PUT    /achievements/:id -> update achievement by id
-DELETE /achievements/:id -> delete achievement by id
-GET    /achievements/game/:id -> get all achievements from game
+GET    /achievements/:id      -> get achievement by id          - DONE
+POST   /achievements          -> add a new achievement          - DONE
+PATCH  /achievements/:id      -> update achievement by id       - DONE
+DELETE /achievements/:id      -> delete achievement by id       - DONE
+GET    /achievements/game/:id -> get all achievements from game - DONE

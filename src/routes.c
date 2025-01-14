@@ -275,6 +275,9 @@ void request_post_register(sqlite3 *db, char *body, char **response,
 
     *response = construct_response(200, "{\"message\": \"User registered.\"}");
   }
+
+  cJSON_Delete(json);
+  free(create_user_format_sql);
 }
 
 void request_post_login(sqlite3 *db, char *body, char **response,
@@ -467,6 +470,9 @@ void request_get_my_games(sqlite3 *db, char *body, char **response,
 
     cJSON_Delete(json_array);
   }
+
+  cJSON_Delete(json);
+  free(my_games_format_sql);
 }
 
 void request_post_my_game(sqlite3 *db, char *body, char **response,
@@ -502,9 +508,410 @@ void request_post_my_game(sqlite3 *db, char *body, char **response,
             game_id->valueint);
 
     db_request(db, insert_my_game_format_sql, callback_array, 0, err_msg,
-               "Insert game intp library");
+               "Inserted game into library");
+
+    *response = construct_response(
+        SUCCESS, "{\"message\": \"Game inserted to library.\"}");
+  }
+
+  cJSON_Delete(json);
+  free(insert_my_game_format_sql);
+}
+
+void request_delete_my_game(sqlite3 *db, char *id, char *body, char **response,
+                            char **err_msg, int socket)
+{
+  const char *delete_my_game_sql =
+      "DELETE FROM Libraries WHERE game_id = %s AND user_id = %d;";
+  char *delete_my_game_format_sql = malloc(strlen(delete_my_game_sql) + 200);
+
+  cJSON *json = cJSON_Parse(body);
+  if (!json) {
+    *response = construct_response(
+        BAD_REQUEST, "{\"error\": \"Failed to parse JSON request body.\"}");
+  } else {
+    cJSON *user_id = cJSON_GetObjectItem(json, "user_id");
+    if (!user_id) {
+      *response = construct_response(
+          BAD_REQUEST, "{\"error\": \"Missing required field: user_id.\"}");
+      send(socket, response, strlen(*response), 0);
+      return;
+    }
+
+    sprintf(delete_my_game_format_sql, delete_my_game_sql, id,
+            user_id->valueint);
+
+    db_request(db, delete_my_game_format_sql, callback_array, 0, err_msg,
+               "Deleted game from library");
+
+    *response = construct_response(
+        SUCCESS, "{\"message\": \"Game deleted from library.\"}");
+  }
+
+  cJSON_Delete(json);
+  free(delete_my_game_format_sql);
+}
+
+void request_get_achievement_by_id(sqlite3 *db, char *id, char **response,
+                                   char **err_msg)
+{
+  const char *achievement_by_id_sql =
+      "SELECT * FROM Achievements WHERE achievement_id = %s;";
+  char *achievement_by_id_format_sql =
+      malloc(strlen(achievement_by_id_sql) + strlen(id) + 1);
+  sprintf(achievement_by_id_format_sql, achievement_by_id_sql, id);
+
+  cJSON *json = cJSON_CreateObject();
+  if (!json) {
+    fprintf(stderr, "ERROR: Failed to create JSON object.\n");
+    return;
+  }
+  db_request(db, achievement_by_id_format_sql, callback_object, json, err_msg,
+             "Fetched achievement by id");
+
+  int response_code = SUCCESS;
+  if (cJSON_GetArraySize(json) == 0) {
+    response_code = NOT_FOUND;
+    cJSON_AddStringToObject(json, "error", "Achievement not found.");
+  }
+
+  char *json_string = cJSON_PrintUnformatted(json);
+
+  if (json_string) {
+    *response = construct_response(response_code, json_string);
+    free(json_string);
+  } else {
+    *response = construct_response(
+        INTERNAL_SERVER_ERROR, "{\"error\": \"Failed to serialize JSON.\"}");
+  }
+
+  cJSON_Delete(json);
+  free(achievement_by_id_format_sql);
+}
+
+void request_post_achievement(sqlite3 *db, char *body, char **response,
+                              char **err_msg, int socket)
+{
+  const char *insert_achievement_sql = "INSERT INTO Achievements (game_id, "
+                                       "name, description, points) "
+                                       "VALUES ('%d', '%s', '%s', '%d');";
+  char *insert_achievement_format_sql =
+      malloc(strlen(insert_achievement_sql) + 200);
+
+  cJSON *json = cJSON_Parse(body);
+  if (!json) {
+    *response = construct_response(
+        BAD_REQUEST, "{\"error\": \"Failed to parse JSON request body.\"}");
+  } else {
+    cJSON *game_id = cJSON_GetObjectItem(json, "game_id");
+    if (!game_id) {
+      *response = construct_response(
+          BAD_REQUEST, "{\"error\": \"Missing required field: game_id.\"}");
+      send(socket, response, strlen(*response), 0);
+      return;
+    }
+    cJSON *name = cJSON_GetObjectItem(json, "name");
+    if (!name) {
+      *response = construct_response(
+          BAD_REQUEST, "{\"error\": \"Missing required field: name.\"}");
+      send(socket, response, strlen(*response), 0);
+      return;
+    }
+    cJSON *description = cJSON_GetObjectItem(json, "description");
+    if (!description) {
+      *response = construct_response(
+          BAD_REQUEST, "{\"error\": \"Missing required field: description.\"}");
+      send(socket, response, strlen(*response), 0);
+      return;
+    }
+    cJSON *points = cJSON_GetObjectItem(json, "points");
+    if (!points) {
+      *response = construct_response(
+          BAD_REQUEST, "{\"error\": \"Missing required field: points.\"}");
+      send(socket, response, strlen(*response), 0);
+      return;
+    }
+
+    sprintf(insert_achievement_format_sql, insert_achievement_sql,
+            game_id->valueint, name->valuestring, description->valuestring,
+            points->valueint);
+
+    db_request(db, insert_achievement_format_sql, 0, 0, err_msg,
+               "Inserted achievement");
 
     *response =
-        construct_response(SUCCESS, "{\"message\": \"Game inserted to library.\"}");
+        construct_response(SUCCESS, "{\"message\": \"Achievement inserted.\"}");
   }
+
+  cJSON_Delete(json);
+  free(insert_achievement_format_sql);
+}
+
+void request_patch_achievement_by_id(sqlite3 *db, char *id, char *body,
+                                     char **response, char **err_msg)
+{
+  char *update_achievement_sql = malloc(1024);
+  sprintf(update_achievement_sql, "UPDATE Achievements SET ");
+  int has_updates = 0;
+
+  cJSON *json = cJSON_Parse(body);
+  if (!json) {
+    *response = construct_response(
+        BAD_REQUEST, "{\"error\": \"Failed to parse JSON request body.\"}");
+  } else {
+    cJSON *name = cJSON_GetObjectItem(json, "name");
+    cJSON *description = cJSON_GetObjectItem(json, "description");
+    cJSON *points = cJSON_GetObjectItem(json, "points");
+
+    if (name && cJSON_IsString(name)) {
+      strcat(update_achievement_sql, "name = '");
+      strcat(update_achievement_sql, name->valuestring);
+      strcat(update_achievement_sql, "', ");
+      has_updates = 1;
+    }
+    if (description && cJSON_IsString(description)) {
+      strcat(update_achievement_sql, "description = '");
+      strcat(update_achievement_sql, description->valuestring);
+      strcat(update_achievement_sql, "', ");
+      has_updates = 1;
+    }
+    if (points && cJSON_IsNumber(points)) {
+      strcat(update_achievement_sql, "points = ");
+      char points_str[10];
+      sprintf(points_str, "%d", points->valueint);
+      strcat(update_achievement_sql, points_str);
+      strcat(update_achievement_sql, ", ");
+      has_updates = 1;
+    }
+
+    if (has_updates) {
+      update_achievement_sql[strlen(update_achievement_sql) - 2] = '\0';
+
+      strcat(update_achievement_sql, " WHERE achievement_id = ");
+      strcat(update_achievement_sql, id);
+      strcat(update_achievement_sql, ";");
+
+      db_request(db, update_achievement_sql, 0, 0, err_msg,
+                 "Updated achievement by id");
+
+      *response = construct_response(SUCCESS,
+                                     "{\"message\": \"Achievement updated.\"}");
+    } else {
+      *response = construct_response(
+          BAD_REQUEST, "{\"error\": \"No fields provided to update.\"}");
+    }
+  }
+
+  free(update_achievement_sql);
+  cJSON_Delete(json);
+}
+
+void request_delete_achievement_by_id(sqlite3 *db, char *id, char **response,
+                                      char **err_msg)
+{
+  const char *delete_achievement_sql =
+      "DELETE FROM Achievements WHERE achievement_id = %s;";
+  char *delete_achievement_format_sql =
+      malloc(strlen(delete_achievement_sql) + strlen(id) + 1);
+  sprintf(delete_achievement_format_sql, delete_achievement_sql, id);
+
+  db_request(db, delete_achievement_format_sql, 0, 0, err_msg,
+             "Deleted achievement by id");
+
+  *response =
+      construct_response(SUCCESS, "{\"message\": \"Achievement deleted.\"}");
+  free(delete_achievement_format_sql);
+}
+
+void request_get_achievements_by_game_id(sqlite3 *db, char *id, char **response,
+                                         char **err_msg)
+{
+  const char *achievements_by_game_id_sql =
+      "SELECT * FROM Achievements WHERE game_id = %s;";
+  char *achievements_by_game_id_format_sql =
+      malloc(strlen(achievements_by_game_id_sql) + strlen(id) + 1);
+  sprintf(achievements_by_game_id_format_sql, achievements_by_game_id_sql, id);
+
+  cJSON *json = cJSON_CreateArray();
+  if (!json) {
+    fprintf(stderr, "ERROR: Failed to create JSON object.\n");
+    return;
+  }
+  db_request(db, achievements_by_game_id_format_sql, callback_array, json,
+             err_msg, "Fetched achievements by game id");
+
+  int response_code = SUCCESS;
+  if (cJSON_GetArraySize(json) == 0) {
+    response_code = NOT_FOUND;
+    cJSON_AddStringToObject(json, "error", "Achievements not found.");
+  }
+
+  char *json_string = cJSON_PrintUnformatted(json);
+
+  if (json_string) {
+    *response = construct_response(response_code, json_string);
+    free(json_string);
+  } else {
+    *response = construct_response(
+        INTERNAL_SERVER_ERROR, "{\"error\": \"Failed to serialize JSON.\"}");
+  }
+
+  cJSON_Delete(json);
+  free(achievements_by_game_id_format_sql);
+}
+
+void request_get_user_achievements(sqlite3 *db, char *body, char **response,
+                                   char **err_msg, int socket)
+{
+  const char *user_achievements_sql =
+      "SELECT Achievements.* "
+      "FROM Achievements "
+      "INNER JOIN User_Achievements ON Achievements.achievement_id = "
+      "User_Achievements.achievement_id "
+      "WHERE User_Achievements.user_id = %d;";
+  char *user_achievements_format_sql =
+      malloc(strlen(user_achievements_sql) + 200);
+  cJSON *json = cJSON_Parse(body);
+  if (!json) {
+    *response = construct_response(
+        BAD_REQUEST, "{\"error\": \"Failed to parse JSON request body.\"}");
+  } else {
+    cJSON *user_id = cJSON_GetObjectItem(json, "user_id");
+    if (!user_id) {
+      *response = construct_response(
+          BAD_REQUEST, "{\"error\": \"Missing required field: user_id.\"}");
+      send(socket, response, strlen(*response), 0);
+      return;
+    }
+
+    sprintf(user_achievements_format_sql, user_achievements_sql,
+            user_id->valueint);
+    printf("user_achievements_format_sql: %s\n", user_achievements_format_sql);
+
+    cJSON *json = cJSON_CreateArray();
+    if (!json) {
+      fprintf(stderr, "ERROR: Failed to create JSON object.\n");
+      return;
+    }
+    db_request(db, user_achievements_format_sql, callback_array, json, err_msg,
+               "Fetched user achievements");
+
+    int response_code = SUCCESS;
+    if (cJSON_GetArraySize(json) == 0) {
+      response_code = NOT_FOUND;
+      cJSON_AddStringToObject(json, "error", "Achievements not found.");
+    }
+
+    char *json_string = cJSON_PrintUnformatted(json);
+
+    if (json_string) {
+      *response = construct_response(response_code, json_string);
+      free(json_string);
+    } else {
+      *response = construct_response(
+          INTERNAL_SERVER_ERROR, "{\"error\": \"Failed to serialize JSON.\"}");
+    }
+  }
+  cJSON_Delete(json);
+  free(user_achievements_format_sql);
+}
+
+void request_post_user_achievement(sqlite3 *db, char *body, char **response,
+                                   char **err_msg, int socket)
+{
+  const char *insert_user_achievement_sql =
+      "INSERT INTO User_Achievements (user_id, "
+      "achievement_id) "
+      "VALUES ('%d', '%d');";
+  char *insert_user_achievement_format_sql =
+      malloc(strlen(insert_user_achievement_sql) + 200);
+
+  cJSON *json = cJSON_Parse(body);
+  if (!json) {
+    *response = construct_response(
+        BAD_REQUEST, "{\"error\": \"Failed to parse JSON request body.\"}");
+  } else {
+    cJSON *user_id = cJSON_GetObjectItem(json, "user_id");
+    if (!user_id) {
+      *response = construct_response(
+          BAD_REQUEST, "{\"error\": \"Missing required field: user_id.\"}");
+      send(socket, response, strlen(*response), 0);
+      return;
+    }
+    cJSON *achievement_id = cJSON_GetObjectItem(json, "achievement_id");
+    if (!achievement_id) {
+      *response = construct_response(
+          BAD_REQUEST,
+          "{\"error\": \"Missing required field: achievement_id.\"}");
+      send(socket, response, strlen(*response), 0);
+      return;
+    }
+
+    sprintf(insert_user_achievement_format_sql, insert_user_achievement_sql,
+            user_id->valueint, achievement_id->valueint);
+
+    db_request(db, insert_user_achievement_format_sql, 0, 0, err_msg,
+               "Inserted user achievement");
+
+    *response = construct_response(
+        SUCCESS, "{\"message\": \"User achievement inserted.\"}");
+  }
+}
+
+void request_get_user_achievements_by_game_id(sqlite3 *db, char *id, char *body,
+                                              char **response, char **err_msg,
+                                              int socket)
+{
+  const char *user_achievements_by_game_id_sql =
+      "SELECT Achievements.* "
+      "FROM Achievements "
+      "INNER JOIN User_Achievements ON Achievements.achievement_id = "
+      "User_Achievements.achievement_id "
+      "WHERE Achievements.game_id = %s AND User_Achievements.user_id = %d;";
+  char *user_achievements_by_game_id_format_sql =
+      malloc(strlen(user_achievements_by_game_id_sql) + 200);
+
+  cJSON *json = cJSON_Parse(body);
+  if (!json) {
+    *response = construct_response(
+        BAD_REQUEST, "{\"error\": \"Failed to parse JSON request body.\"}");
+  } else {
+    cJSON *user_id = cJSON_GetObjectItem(json, "user_id");
+    if (!user_id) {
+      *response = construct_response(
+          BAD_REQUEST, "{\"error\": \"Missing required field: user_id.\"}");
+      send(socket, response, strlen(*response), 0);
+      return;
+    }
+
+    sprintf(user_achievements_by_game_id_format_sql,
+            user_achievements_by_game_id_sql, id, user_id->valueint);
+
+    cJSON *json = cJSON_CreateArray();
+    if (!json) {
+      fprintf(stderr, "ERROR: Failed to create JSON object.\n");
+      return;
+    }
+    db_request(db, user_achievements_by_game_id_format_sql, callback_array,
+               json, err_msg, "Fetched user achievements by game id");
+
+    int response_code = SUCCESS;
+    if (cJSON_GetArraySize(json) == 0) {
+      response_code = NOT_FOUND;
+      cJSON_AddStringToObject(json, "error", "Achievements not found.");
+    }
+
+    char *json_string = cJSON_PrintUnformatted(json);
+
+    if (json_string) {
+      *response = construct_response(response_code, json_string);
+      free(json_string);
+    } else {
+      *response = construct_response(
+          INTERNAL_SERVER_ERROR, "{\"error\": \"Failed to serialize JSON.\"}");
+    }
+  }
+
+  cJSON_Delete(json);
+  free(user_achievements_by_game_id_format_sql);
 }
