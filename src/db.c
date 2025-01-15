@@ -78,6 +78,8 @@ void init_tables(sqlite3 *db, char **err_msg)
       "CREATE TABLE IF NOT EXISTS Games("
       "game_id INTEGER PRIMARY KEY AUTOINCREMENT, "
       "title TEXT NOT NULL, "
+      "description TEXT NOT NULL, "
+      "price TEXT NOT NULL, "
       "genre TEXT NOT NULL, "
       "cover_image TEXT NOT NULL, "
       "icon_image TEXT NOT NULL, "

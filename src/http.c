@@ -44,10 +44,14 @@ char *construct_response(StatusCode status_code, const char *body)
     break;
   }
 
-  const char *header_format = "HTTP/1.1 %s\r\n"
-                              "Content-Type: application/json\r\n"
-                              "Content-Length: %zu\r\n"
-                              "\r\n";
+  const char *header_format =
+      "HTTP/1.1 %s\r\n"
+      "Content-Type: application/json\r\n"
+      "Access-Control-Allow-Origin: *\r\n"
+      "Access-Control-Allow-Methods: GET, POST, PATCH, DELETE, OPTIONS\r\n"
+      "Access-Control-Allow-Headers: Content-Type\r\n"
+      "Content-Length: %zu\r\n"
+      "\r\n";
 
   size_t header_len =
       strlen(header_format) + strlen(status_text) + strlen(body) + 20;
@@ -160,6 +164,19 @@ void handle_request(sqlite3 *db, char **err_msg, char buffer[BUFFER_SIZE],
   printf("Method   : %s\n", method);
 
   char *response;
+
+  if (strcmp(method, "OPTIONS") == 0) {
+    const char *options_response =
+        "HTTP/1.1 204 No Content\r\n"
+        "Access-Control-Allow-Origin: *\r\n"
+        "Access-Control-Allow-Methods: GET, POST, PATCH, DELETE, OPTIONS\r\n"
+        "Access-Control-Allow-Headers: Content-Type\r\n"
+        "Content-Length: 0\r\n"
+        "\r\n";
+
+    send(socket, options_response, strlen(options_response), 0);
+    printf("Preflight OPTIONS response sent.\n");
+  }
 
   if (strcmp(path_base, "/games") == 0) {
     if (strcmp(method, "GET") == 0 && is_integer(path_id)) {
