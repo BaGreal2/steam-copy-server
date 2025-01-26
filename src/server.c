@@ -36,7 +36,6 @@ int main()
   int new_socket;
   struct sockaddr_in address;
   int addrlen = sizeof(address);
-  char buffer[BUFFER_SIZE] = {0};
 
   signal(SIGINT, handle_sigint);
 
@@ -72,7 +71,7 @@ int main()
       continue;
     }
 
-    handle_request(db, &err_msg, buffer, new_socket);
+    handle_request(db, &err_msg, new_socket);
 
     close(new_socket);
   }

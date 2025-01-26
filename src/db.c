@@ -77,6 +77,7 @@ void init_tables(sqlite3 *db, char **err_msg)
   const char *create_games_table_sql =
       "CREATE TABLE IF NOT EXISTS Games("
       "game_id INTEGER PRIMARY KEY AUTOINCREMENT, "
+      "added_by INTEGER NOT NULL, "
       "title TEXT NOT NULL, "
       "description TEXT NOT NULL, "
       "price TEXT NOT NULL, "
@@ -84,7 +85,8 @@ void init_tables(sqlite3 *db, char **err_msg)
       "cover_image TEXT NOT NULL, "
       "icon_image TEXT NOT NULL, "
       "release_date DATETIME DEFAULT CURRENT_TIMESTAMP, "
-      "developer TEXT);";
+      "developer TEXT, "
+      "FOREIGN KEY (added_by) REFERENCES Users(user_id) ON DELETE CASCADE);";
   const char *create_libraries_table_sql =
       "CREATE TABLE IF NOT EXISTS Libraries("
       "library_id INTEGER PRIMARY KEY AUTOINCREMENT, "
