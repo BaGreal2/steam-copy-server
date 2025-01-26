@@ -75,9 +75,26 @@ void construct_json_response(cJSON *json, int code, char **response)
   }
 }
 
-void request_get_games(sqlite3 *db, char **response, char **err_msg)
+void request_get_games(sqlite3 *db, QueryParams *query, char **response,
+                       char **err_msg)
 {
-  const char *select_sql = "SELECT * FROM Games;";
+  char *select_sql = malloc(1024);
+  strcpy(select_sql, "SELECT * FROM Games;");
+
+  if (query->count > 0) {
+    char *user_id = query->values[0];
+    if (user_id && strcmp(query->keys[0], "user_id") == 0) {
+      printf("User ID: %s\n", user_id);
+      sprintf(select_sql,
+              "SELECT Games.*, "
+              "CASE WHEN Libraries.library_id IS NOT NULL THEN 1 ELSE 0 END "
+              "AS has_game "
+              "FROM Games "
+              "LEFT JOIN Libraries ON Games.game_id = Libraries.game_id AND "
+              "Libraries.user_id = '%s';",
+              user_id);
+    }
+  }
 
   cJSON *json_array = cJSON_CreateArray();
   if (!json_array) {

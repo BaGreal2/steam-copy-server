@@ -388,7 +388,7 @@ void handle_request(sqlite3 *db, char **err_msg, int socket)
         request_get_game_by_id(db, path_id, &response, err_msg);
       } else if (strcmp(method, "GET") == 0) {
         // GET /games
-        request_get_games(db, &response, err_msg);
+        request_get_games(db, &query, &response, err_msg);
       } else if (strcmp(method, "POST") == 0) {
         // POST /games
         request_post_game(db, body, &response, err_msg, socket);

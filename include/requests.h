@@ -10,7 +10,7 @@ char *format_sql_query(const char *temp, ...);
 void handle_error(const char *message, char **response, int socket);
 void construct_json_response(cJSON *json, int code, char **response);
 
-void request_get_games(sqlite3 *db, char **response, char **err_msg);
+void request_get_games(sqlite3 *db, QueryParams *query, char **response, char **err_msg);
 void request_get_game_by_id(sqlite3 *db, char *id, char **response, char **err_msg);
 void request_post_game(sqlite3 *db, char *body, char **response, char **err_msg, int socket);
 void request_delete_game_by_id(sqlite3 *db, char *id, char **response, char **err_msg);
