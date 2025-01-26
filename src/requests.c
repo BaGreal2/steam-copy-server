@@ -901,7 +901,7 @@ void request_patch_user(sqlite3 *db, QueryParams *query, char *body,
     return;
   }
 
-  const char *fields[] = {"username", "email"};
+  const char *fields[] = {"username", "email", "profile_image"};
   char *sql = malloc(1024);
   strcpy(sql, "UPDATE Users SET ");
 
@@ -961,6 +961,7 @@ void request_patch_user(sqlite3 *db, QueryParams *query, char *body,
 
     if (json_string) {
       *response = construct_response(response_code, json_string);
+      free(json_string);
     } else {
       *response = construct_response(
           INTERNAL_SERVER_ERROR, "{\"error\": \"Failed to serialize JSON.\"}");
