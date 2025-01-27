@@ -12,7 +12,7 @@ POST /login    -> login    - DONE
 POST /logout   -> logout   - FOR LATER
 
 # GET    /me                  -> get my user info
-PATCH  /me                  -> patch information of a user              
+PATCH  /me                  -> patch information of a user              - DONE
 GET    /me/games            -> get all games from user library          - DONE
 POST   /me/games            -> add a new game to user library           - DONE
 DELETE /me/games/:id        -> delete game from user library            - DONE
